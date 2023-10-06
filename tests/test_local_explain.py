@@ -2,46 +2,42 @@ import pytest
 import torch 
 import os 
 
-from nugraph.explain_graph import ExplainLocal
+from nugraph.explain_graph.explain_local import ExplainLocal
 from nugraph.data import H5DataModule
 
-checkpoint_path = "paper.ckpt" # Not for remote ci/cd
+checkpoint_path = "tests/resources/paper.ckpt" # Not for remote ci/cd
 data_path = ""
 
-@pytest.fixture
-def Child(): 
-    class thing(ExplainLocal): 
-        def __init__(self, data_path: str,checkpoint_path: str = None, out_path: str = "explainations/",  batch_size: int = 16) -> None:
-            super().__init__(data_path, out_path, checkpoint_path, batch_size)
-    return thing 
 
-def test_load_model(Child): 
-    model = Child(data_path=data_path, checkpoint_path=checkpoint_path).model 
+def test_load_model(): 
+    model = ExplainLocal(data_path=data_path, checkpoint_path=checkpoint_path).model 
     assert isinstance(model, torch.nn.Module)
 
-def test_load_data(Child): 
-    data = Child(data_path=data_path, checkpoint_path=checkpoint_path).data 
+def test_load_data(): 
+    data = ExplainLocal(data_path=data_path, checkpoint_path=checkpoint_path).data 
     assert isinstance(data, H5DataModule)
 
-def test_no_model(Child): 
-    model = Child(data_path=data_path).model 
+def test_no_model(): 
+    model = ExplainLocal(data_path=data_path).model 
     assert isinstance(model, torch.nn.Module)
 
 def test_visualize_subclass(): 
     class Child(ExplainLocal): 
         def __init__(self, checkpoint_path: str = None, out_path: str = "explainations/",  batch_size: int = 16) -> None:
-            super().__init__(data_path, out_path, checkpoint_path, batch_size)
+            super().__init__(data_path, checkpoint_path=None, out_path="./")
 
         def visualize(self, path): 
             open(path, "w")
     
     path = "test_file.png"
-    Child().plot(path)
+    Child().visualize(path)
     if os.path.exists(path): 
         assert True 
         os.remove(path)
     else: 
         assert False
+
+    assert hasattr(Child(), "model")
 
 
 def test_save_results_subclass(): 

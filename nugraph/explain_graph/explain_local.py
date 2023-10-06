@@ -1,19 +1,12 @@
-from abc import ABC, abstractmethod
-from typing import Any
 import tqdm 
 import pandas as pd 
 import os 
-
-import nugraph as ng
+from nugraph import data, models, util
 import lightning.pytorch as pl 
+import torch 
 
-
-class ExplainLocal(ABC): 
-    def __init__(self, 
-                 data_path:str, 
-                 out_path:str = "explainations/",
-                 checkpoint_path:str=None, 
-                 batch_size:int=16) -> None:
+class ExplainLocal:
+    def __init__(self, data_path:str, out_path:str = "explainations/",checkpoint_path:str=None, batch_size:int=16):
         """
         Abstract class 
         Perform a local explaination method on a single datapoint
@@ -24,7 +17,7 @@ class ExplainLocal(ABC):
             checkpoint_path (str, optional): _description_. Defaults to None.
             batch_size (int, optional): _description_. Defaults to 16.
         """
-        self.model = self.load_checkpoint(checkpoint_path) if checkpoint_path is not None else NuGraph2()
+        self.model = self.load_checkpoint(checkpoint_path) if checkpoint_path is not None else models.NuGraph2()
         self.data = self.load_data(data_path, batch_size)
         self.explainations = [] 
         self.out_path = out_path
@@ -35,14 +28,29 @@ class ExplainLocal(ABC):
         Returns:
             _type_: _description_
         """
-        model = ng.models.NuGraph.load_from_checkpoint(checkpoint_path) 
-        model.eval() 
+
+        try: 
+            model = models.NuGraph2.load_from_checkpoint(
+                checkpoint_path, 
+                planar_features=64,
+                nexus_features = 16,
+                vertex_features= 40) 
+            model.eval() 
+
+        except RuntimeError: 
+            model =  models.NuGraph2.load_from_checkpoint(
+                checkpoint_path,  
+                planar_features=64,
+                nexus_features = 16,
+                vertex_features= 40, 
+                map_location=torch.device('cpu'))
+            model.eval() 
         return model 
 
     def inference(self): 
         """_summary_
         """
-        accelerator, devices = ng.util.configure_device()
+        accelerator, devices = util.configure_device()
         trainer = pl.Trainer(accelerator=accelerator, devices=devices,
                          logger=False)
         predictions = trainer.predict(self.model, dataloaders=self.data.test_dataloader())
@@ -63,22 +71,20 @@ class ExplainLocal(ABC):
         Returns:
             _type_: _description_
         """
-        return ng.data.H5DataModule(data_path, batch_size=batch_size)
+        return data.H5DataModule(data_path, batch_size=batch_size)
 
-    @abstractmethod
     def explain(self, *args, **kwds): 
         """_summary_
 
         Returns:
             _type_: _description_
         """
-        return "" 
+        raise NotImplemented
     
-    @abstractmethod
     def visualize(self, *args, **kwrds): 
         """_summary_
         """
-        pass 
+        raise NotImplemented 
     
     def save(self, format:str='hdf'): 
         """_summary_
@@ -90,12 +96,12 @@ class ExplainLocal(ABC):
         if not os.path.exists(self.out_path): 
             os.makedirs(self.out_path)
 
-        save_file = f"{self.out_path}{}"
+        save_file = f"{self.out_path}results.{format}"
         {
             "hdf":lambda x:x.to_hdf(save_file, format='table'), 
             'csv': lambda x: x.to_csv(save_file)
         }[format](self.explainations)
 
-    def __call__(self, *args: Any, **kwds: Any) -> Any:
+    def __call__(self, *args, **kwds):
         self.inference()
         self.save() 
