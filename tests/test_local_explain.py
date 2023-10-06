@@ -8,6 +8,9 @@ from nugraph.data import H5DataModule
 checkpoint_path = "tests/resources/paper.ckpt" # Not for remote ci/cd
 data_path = ""
 
+@pytest.fixture
+def generate_data(): 
+    pass 
 
 def test_load_model(): 
     model = ExplainLocal(data_path=data_path, checkpoint_path=checkpoint_path).model 

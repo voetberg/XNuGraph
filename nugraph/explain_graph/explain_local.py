@@ -18,7 +18,7 @@ class ExplainLocal:
             batch_size (int, optional): _description_. Defaults to 16.
         """
         self.model = self.load_checkpoint(checkpoint_path) if checkpoint_path is not None else models.NuGraph2()
-        self.data = self.load_data(data_path, batch_size)
+        #self.data = self.load_data(data_path, batch_size)
         self.explainations = [] 
         self.out_path = out_path
 
@@ -35,7 +35,6 @@ class ExplainLocal:
                 planar_features=64,
                 nexus_features = 16,
                 vertex_features= 40) 
-            model.eval() 
 
         except RuntimeError: 
             model =  models.NuGraph2.load_from_checkpoint(
@@ -44,7 +43,8 @@ class ExplainLocal:
                 nexus_features = 16,
                 vertex_features= 40, 
                 map_location=torch.device('cpu'))
-            model.eval() 
+        model.eval() 
+        
         return model 
 
     def inference(self): 
