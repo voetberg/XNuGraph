@@ -44,6 +44,38 @@ def test_visualize_subclass():
 
 
 def test_save_results_subclass(): 
-    #TODO basic save structure for the cluster. I don't know what it should be 
-    # Yet.
-    pass 
+    import pandas as pd 
+    test_outdir = "./test/explainations/"
+
+    class Child(ExplainLocal): 
+        def __init__(self) -> None:
+            super().__init__(data_path, checkpoint_path=None, out_path=test_outdir)
+            self.explainations = pd.DataFrame({1:[0]})
+
+    Child().save("file_name") 
+    
+    expected_path = f"{test_outdir}file_name.hdf"
+    if os.path.exists(expected_path): 
+        assert True 
+        os.remove(expected_path)
+    else: 
+        assert False
+
+    Child().save("file_name", format='csv') 
+    expected_path = f"{test_outdir}file_name.csv"
+    if os.path.exists(expected_path): 
+        assert True 
+        os.remove(expected_path)
+    else: 
+        assert False
+
+    Child().save(format='csv') 
+    expected_path = os.listdir(test_outdir)
+    if len(expected_path)==1:
+        assert True 
+        os.remove(f"{test_outdir}{expected_path[0]}")
+    else: 
+        assert False
+
+    import shutil
+    shutil.rmtree(test_outdir, ignore_errors=True)

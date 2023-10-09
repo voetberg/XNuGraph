@@ -19,7 +19,7 @@ class ExplainLocal:
             batch_size (int, optional): Batch size for the data loader. Defaults to 16.
         """
         self.model = self.load_checkpoint(checkpoint_path) if checkpoint_path is not None else models.NuGraph2()
-        self.data = self.load_data(data_path, batch_size)
+        #self.data = self.load_data(data_path, batch_size)
         self.explainations = [] 
         self.out_path = out_path
 
@@ -93,22 +93,24 @@ class ExplainLocal:
     
     def save(self, file_name:str=None, format:str='hdf'): 
         """
-        Save the results to and hdf5 or a csv - saves to outpath/results.format
+        Save the results to and hdf5 or a csv - saves to outpath/file_name.format
 
         Args:
             file_name (str, optional): Name of file. If not supplied, filename is results_$timestamp. Defaults to None.
             format (str, optional): Type of file to save, ['hdf', 'csv']. Defaults to 'hdf'.
         """
         assert format in ['hdf', 'csv'], "format must be 'hdf' or 'csv'"
+        assert isinstance(self.explainations, pd.DataFrame), "No results found, please run explainations.inference before saving"
+       
         if not os.path.exists(self.out_path): 
             os.makedirs(self.out_path)
-            
+
         if file_name is None: 
             file_name = f"results_{datetime.now().timestamp()}"
 
         save_file = f"{self.out_path}{file_name}.{format}"
         {
-            "hdf":lambda x:x.to_hdf(save_file, format='table'), 
+            "hdf":lambda x:x.to_hdf(save_file, 's'), 
             'csv': lambda x: x.to_csv(save_file)
         }[format](self.explainations)
 
