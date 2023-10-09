@@ -4,6 +4,7 @@ import os
 from nugraph import data, models, util
 import lightning.pytorch as pl 
 import torch 
+from datetime import datetime 
 
 class ExplainLocal:
     def __init__(self, data_path:str, out_path:str = "explainations/",checkpoint_path:str=None, batch_size:int=16):
@@ -12,21 +13,24 @@ class ExplainLocal:
         Perform a local explaination method on a single datapoint
 
         Args:
-            data_path (str): _description_
-            out_path (str, optional): _description_. Defaults to "explainations/".
-            checkpoint_path (str, optional): _description_. Defaults to None.
-            batch_size (int, optional): _description_. Defaults to 16.
+            data_path (str): path to h5 file with data, to perform inference on
+            out_path (str, optional): Folder to save results to. Defaults to "explainations/".
+            checkpoint_path (str, optional): Checkpoint to trained model. If not supplied, creates a new model. Defaults to None.
+            batch_size (int, optional): Batch size for the data loader. Defaults to 16.
         """
         self.model = self.load_checkpoint(checkpoint_path) if checkpoint_path is not None else models.NuGraph2()
-        #self.data = self.load_data(data_path, batch_size)
+        self.data = self.load_data(data_path, batch_size)
         self.explainations = [] 
         self.out_path = out_path
 
     def load_checkpoint(self, checkpoint_path:str):
         """Load a saved checkpoint to perform inference
 
+        Args:
+            checkpoint_path (str): Trained checkpoint
+
         Returns:
-            _type_: _description_
+            nugraph.modes.NuGraph2: Model from a loaded the checkpoint
         """
 
         try: 
@@ -48,7 +52,8 @@ class ExplainLocal:
         return model 
 
     def inference(self): 
-        """_summary_
+        """
+        Perform predictions and explaination for the loaded data using the model
         """
         accelerator, devices = util.configure_device()
         trainer = pl.Trainer(accelerator=accelerator, devices=devices,
@@ -61,42 +66,47 @@ class ExplainLocal:
         self.explainations = pd.concat(self.explainations)
 
 
-    def load_data(self, data_path, batch_size): 
-        """_summary_
+    def load_data(self, data_path:str, batch_size:int): 
+        """
+        Load h5 dataset
 
         Args:
-            data_path (_type_): _description_
-            batch_size (_type_): _description_
+            data_path (str): location where data is stored
+            batch_size (int): number of samples to load into memory at a single time
 
         Returns:
-            _type_: _description_
+            nugraph.data.H5DataModule: Loaded data
         """
         return data.H5DataModule(data_path, batch_size=batch_size)
 
     def explain(self, *args, **kwds): 
-        """_summary_
-
-        Returns:
-            _type_: _description_
+        """
+        Impliment the explaination method
         """
         raise NotImplemented
     
     def visualize(self, *args, **kwrds): 
-        """_summary_
+        """ 
+        Produce a visualization of the explaination
         """
         raise NotImplemented 
     
-    def save(self, format:str='hdf'): 
-        """_summary_
+    def save(self, file_name:str=None, format:str='hdf'): 
+        """
+        Save the results to and hdf5 or a csv - saves to outpath/results.format
 
         Args:
-            format (str, optional): _description_. Defaults to 'hdf'.
+            file_name (str, optional): Name of file. If not supplied, filename is results_$timestamp. Defaults to None.
+            format (str, optional): Type of file to save, ['hdf', 'csv']. Defaults to 'hdf'.
         """
         assert format in ['hdf', 'csv'], "format must be 'hdf' or 'csv'"
         if not os.path.exists(self.out_path): 
             os.makedirs(self.out_path)
+            
+        if file_name is None: 
+            file_name = f"results_{datetime.now().timestamp()}"
 
-        save_file = f"{self.out_path}results.{format}"
+        save_file = f"{self.out_path}{file_name}.{format}"
         {
             "hdf":lambda x:x.to_hdf(save_file, format='table'), 
             'csv': lambda x: x.to_csv(save_file)
