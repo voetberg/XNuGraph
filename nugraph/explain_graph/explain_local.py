@@ -51,7 +51,7 @@ class ExplainLocal:
         
         return model 
 
-    def inference(self): 
+    def inference(self, explaintion_kwargs): 
         """
         Perform predictions and explaination for the loaded data using the model
         """
@@ -61,7 +61,8 @@ class ExplainLocal:
         predictions = trainer.predict(self.model, dataloaders=self.data.test_dataloader())
         for _, batch in enumerate(tqdm.tqdm(predictions)):
             for data in batch.to_data_list():
-                self.explainations.append(self.explain(self.model, data)) 
+
+                self.explainations.append(self.explain(data, **explaintion_kwargs)) 
         
         self.explainations = pd.concat(self.explainations)
 
@@ -79,7 +80,7 @@ class ExplainLocal:
         """
         return data.H5DataModule(data_path, batch_size=batch_size)
 
-    def explain(self, *args, **kwds): 
+    def explain(self, data, **kwargs): 
         """
         Impliment the explaination method
         """
