@@ -1,10 +1,11 @@
 import tqdm 
-import pandas as pd 
 import os 
-from nugraph import data, models, util
-import lightning.pytorch as pl 
+from nugraph import data, models
+import h5py
+
 import torch 
 from datetime import datetime 
+from torch_geometric.explain import Explanation
 
 class ExplainLocal:
     def __init__(self, data_path:str, out_path:str = "explainations/",checkpoint_path:str=None, batch_size:int=16):
@@ -18,10 +19,11 @@ class ExplainLocal:
             checkpoint_path (str, optional): Checkpoint to trained model. If not supplied, creates a new model. Defaults to None.
             batch_size (int, optional): Batch size for the data loader. Defaults to 16.
         """
+        self.data = self.load_data(data_path, batch_size)
+
         self.model = self.load_checkpoint(checkpoint_path) if checkpoint_path is not None else models.NuGraph2()
-        #self.data = self.load_data(data_path, batch_size)
-        self.explainations = [] 
-        self.out_path = out_path
+        self.explainations = Explanation()
+        self.out_path = out_path.rstrip('/')
 
     def load_checkpoint(self, checkpoint_path:str):
         """Load a saved checkpoint to perform inference
@@ -51,21 +53,15 @@ class ExplainLocal:
         
         return model 
 
-    def inference(self, explaintion_kwargs): 
+    def inference(self, explaintion_kwargs=None): 
         """
         Perform predictions and explaination for the loaded data using the model
         """
-        accelerator, devices = util.configure_device()
-        trainer = pl.Trainer(accelerator=accelerator, devices=devices,
-                         logger=False)
-        predictions = trainer.predict(self.model, dataloaders=self.data.test_dataloader())
-        for _, batch in enumerate(tqdm.tqdm(predictions)):
-            for data in batch.to_data_list():
+        explaintion_kwargs = {} if explaintion_kwargs is None else explaintion_kwargs
 
-                self.explainations.append(self.explain(data, **explaintion_kwargs)) 
-        
-        self.explainations = pd.concat(self.explainations)
-
+        for _, batch in enumerate(tqdm.tqdm(self.data)):
+            explaination = self.explain(batch, raw=False, **explaintion_kwargs)
+            self.explainations.update(explaination)
 
     def load_data(self, data_path:str, batch_size:int): 
         """
@@ -92,7 +88,7 @@ class ExplainLocal:
         """
         raise NotImplemented 
     
-    def save(self, file_name:str=None, format:str='hdf'): 
+    def save(self, file_name:str=None): 
         """
         Save the results to and hdf5 or a csv - saves to outpath/file_name.format
 
@@ -100,20 +96,21 @@ class ExplainLocal:
             file_name (str, optional): Name of file. If not supplied, filename is results_$timestamp. Defaults to None.
             format (str, optional): Type of file to save, ['hdf', 'csv']. Defaults to 'hdf'.
         """
-        assert format in ['hdf', 'csv'], "format must be 'hdf' or 'csv'"
-        assert isinstance(self.explainations, pd.DataFrame), "No results found, please run explainations.inference before saving"
-       
+        assert len(self.explainations)!=0, "No results found, please run explainations.inference before saving"
+
         if not os.path.exists(self.out_path): 
             os.makedirs(self.out_path)
 
         if file_name is None: 
             file_name = f"results_{datetime.now().timestamp()}"
 
-        save_file = f"{self.out_path}{file_name}.{format}"
-        {
-            "hdf":lambda x:x.to_hdf(save_file, 's'), 
-            'csv': lambda x: x.to_csv(save_file)
-        }[format](self.explainations)
+        save_file = f"{self.out_path}/{file_name}.h5"
+        save_results = h5py.File(save_file, 'w')
+        for header, data in self.explainations.to_dict().items():
+            print(len(data))
+            save_results.create_dataset(header, data=data)
+
+        save_results.close()
 
     def __call__(self, *args, **kwds):
         self.inference()

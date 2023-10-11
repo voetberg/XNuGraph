@@ -2,7 +2,6 @@ import pytest
 import os 
 from nugraph.explain_graph.gnn_explain import GNNExplain
 
-
 from torch_geometric.datasets import Planetoid
 from torch_geometric.nn import GCNConv
 import torch
@@ -47,13 +46,12 @@ def test_has_explaination():
 def test_inference_single_point(): 
     e = TestExplain() 
     explaination = e.explain(e.data, node_index=[1])
-    #Not sure what I should expect out of these. 
-    assert len(explaination) == len(e.data)
+    assert len(explaination.x) == len(e.data.x)
 
 def test_inference_multi_point(): 
     e = TestExplain() 
     explaination = e.explain(e.data, node_index=[1,2,3])
-    assert len(explaination) == len(e.data) 
+    assert len(explaination.x) == len(e.data.x) 
 
 def test_visualizations_single_image(): 
     e = TestExplain() 
@@ -61,25 +59,21 @@ def test_visualizations_single_image():
     file_name = "test_file.png"
     e.visualize(explaination, file_name=file_name)
 
-    assert os.path.exists(f"{out_path}/{file_name}")
+    expected_outpath = f"{out_path}/{file_name}"
+    assert os.path.exists(expected_outpath)
+    os.remove(expected_outpath)
 
 def test_visualizations_batch(): 
     e = TestExplain() 
-    e.inference()
     e.visualize()
 
-    assert os.listdir(f"{out_path}/plots") == len(e.data)
-
-def test_save_results_csv(): 
-    e = TestExplain() 
-    e.inference() 
-    e.save(file_name="explainations", format='csv')
-
-    assert os.path.exists(f"{e.out_path}/explainations.csv")
+    assert len(os.listdir(f"{out_path}/plots"))  == len(e.data)
 
 def test_save_results_h5(): 
     e = TestExplain() 
     e.inference() 
-    e.save(file_name="explainations", format='hdf') 
+    e.save(file_name="explainations") 
 
-    assert os.path.exists(f"{e.out_path}/explainations.hdf")
+    expected_outpath = f"{e.out_path}/explainations.h5"
+    assert os.path.exists(expected_outpath)
+    os.remove(expected_outpath)
