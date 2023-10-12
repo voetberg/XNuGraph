@@ -21,6 +21,10 @@ class GNNExplain(ExplainLocal):
         )
 
     def visualize(self, explaination=None, file_name=None):
+        append_explainations = True
+        if len(self.explainations)!=0: 
+            append_explainations = False
+
         if not explaination: 
             file_name = f"{self.out_path}/plots"
             if not os.path.exists(file_name):
@@ -29,6 +33,10 @@ class GNNExplain(ExplainLocal):
             for index, batch in enumerate(self.data):
                 explaination = self.explain(batch, raw=True)
                 explaination.visualize_graph(f"{file_name}/{index}.png")
+                
+                if append_explainations: 
+                    self.explainations.update(explaination.get_explanation_subgraph())
+
         else: 
             assert file_name is not None, "Please supply a file name"
             explaination.visualize_graph(f"{self.out_path}/{file_name}")

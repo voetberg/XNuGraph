@@ -72,9 +72,9 @@ class ExplainLocal:
             batch_size (int): number of samples to load into memory at a single time
 
         Returns:
-            nugraph.data.H5DataModule: Loaded data
+            nugraph.data.H5Dataset: Loaded data
         """
-        return data.H5DataModule(data_path, batch_size=batch_size)
+        return data.H5DataModule(data_path, batch_size=batch_size).val_dataloader
 
     def explain(self, data, **kwargs): 
         """
