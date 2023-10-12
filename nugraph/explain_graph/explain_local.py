@@ -107,7 +107,6 @@ class ExplainLocal:
         save_file = f"{self.out_path}/{file_name}.h5"
         save_results = h5py.File(save_file, 'w')
         for header, data in self.explainations.to_dict().items():
-            print(len(data))
             save_results.create_dataset(header, data=data)
 
         save_results.close()
