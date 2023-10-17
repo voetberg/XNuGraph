@@ -165,7 +165,7 @@ class FilterDecoder(DecoderBase):
                 nn.Sigmoid())
 
     def forward(self, x: dict[str, Tensor],
-                batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
+                batch: dict[str, Tensor]):
         return { 'x_filter': { p: self.net[p](x[p].flatten(start_dim=1)).squeeze(dim=-1) for p in self.planes }}
 
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
@@ -217,7 +217,7 @@ class EventDecoder(DecoderBase):
                       out_features=len(event_classes)))
 
     def forward(self, x: dict[str, Tensor],
-                batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
+                batch: dict[str, Tensor]):
         x = [ pool(x[p].flatten(1), batch[p]) for p, pool in self.pool.items() ]
         return { 'x': { 'evt': self.net(cat(x, dim=1)) }}
 
@@ -261,12 +261,12 @@ class VertexDecoder(DecoderBase):
         x = cat(x, dim=1)
         return { 'x_vtx': { 'evt': self.net(x) }}
 
-    def arrange(self, batch) -> tuple[Tensor, Tensor]:
+    def arrange(self, batch):
         x = batch['evt'].x_vtx
         y = batch['evt'].y_vtx
         return x, y
 
-    def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
+    def metrics(self, x: Tensor, y: Tensor, stage: str):
         xyz = (x-y).abs().mean(dim=0)
         return {
             f'vertex-resolution-x/{stage}': xyz[0],
