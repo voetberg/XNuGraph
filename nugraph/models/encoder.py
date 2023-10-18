@@ -20,5 +20,5 @@ class Encoder(nn.Module):
                 ClassLinear(in_features, node_features, self.num_classes),
                 nn.Tanh())
 
-    def forward(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
+    def forward(self, x: dict[str, Tensor]):
         return { p: net(x[p].unsqueeze(1).expand(-1, self.num_classes, -1)) for p, net in self.net.items() }
