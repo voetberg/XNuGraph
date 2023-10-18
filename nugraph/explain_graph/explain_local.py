@@ -122,7 +122,7 @@ class ExplainLocal:
         fidelity_positive, fidelity_negative = metric.fidelity(self.explainer, explainations)
         characterization = metric.characterization_score(fidelity_positive, fidelity_negative)
         unfaithfulness = metric.unfaithfulness(self.explainer, explainations)
-        
+
         return {
             "fidelity+": fidelity_positive, 
             "fidelity-":fidelity_negative,
@@ -132,11 +132,10 @@ class ExplainLocal:
 
     def save(self, file_name:str=None): 
         """
-        Save the results to and hdf5 or a csv - saves to outpath/file_name.format
+        Save the results to hdf5 - saves to outpath/file_name.h5
 
         Args:
             file_name (str, optional): Name of file. If not supplied, filename is results_$timestamp. Defaults to None.
-            format (str, optional): Type of file to save, ['hdf', 'csv']. Defaults to 'hdf'.
         """
         assert len(self.explainations)!=0, "No results found, please run explainations.inference before saving"
 
