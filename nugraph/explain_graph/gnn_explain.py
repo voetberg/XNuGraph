@@ -8,8 +8,7 @@ class GNNExplain(ExplainLocal):
         super().__init__(data_path, out_path, checkpoint_path, batch_size)
         model_config =  ModelConfig(
             mode='multiclass_classification',
-            task_level='node',
-            return_type='probs')
+            task_level='node')
         
         self.explainer = Explainer(
             model=self.model, 
@@ -43,12 +42,11 @@ class GNNExplain(ExplainLocal):
 
     
     def explain(self, data, raw:bool=True, **kwds):
-        x = data.x
-        edge_index = data.edge_index
+        x, edge_plane, edge_nexus, nexus, batch = self.unpack(data)
         if hasattr(kwds, "node_index"): 
-            explaination = self.explainer(x, edge_index, kwds.node_index)
+            explaination = self.explainer(x, edge_plane, kwds.node_index, edge_index_nexus=edge_nexus, nexus=nexus, batch=batch)
         else: 
-            explaination = self.explainer(x, edge_index)
+            explaination = self.explainer(x, edge_plane, edge_index_nexus=edge_nexus, nexus=nexus, batch=batch)
 
         if not raw: 
             explaination = explaination.get_explanation_subgraph()

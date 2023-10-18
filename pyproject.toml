@@ -5,7 +5,7 @@ build-backend = "flit_core.buildapi"
 [project]
 name = "nugraph"
 authors = [{name = "v hewes", email = "vhewes@fnal.gov"}]
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 readme = "README.md"
 license = {file = "LICENSE"}
 classifiers = [

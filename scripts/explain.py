@@ -31,7 +31,7 @@ def run_explaination(checkpoint, algorithm, outfile, data_path, batch_size, test
         batch_size=batch_size)
 
     if test: 
-        data = explain.data.val_dataloader.get(0)
+        data = next(iter(explain.data))
         e = explain.explain(data, raw=True, node_index=[1])
         explain.visualize(e, file_name="test.png")
         
@@ -42,4 +42,4 @@ def run_explaination(checkpoint, algorithm, outfile, data_path, batch_size, test
 
 if __name__=='__main__': 
     args = configure()
-    run_explaination(**args)
+    run_explaination(args.checkpoint, args.algorithm, args.outfile, args.data_path, args.batch_size, args.test) 

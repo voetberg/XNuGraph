@@ -3,8 +3,8 @@ set -e
 
 checkpoint=/wclustre/fwk/exatrkx/data/uboone/CHEP2023/paper.ckpt 
 algorithm=GNNExplainer
-outfile=/wclustre/fwk/exatrkx/data/uboone/CHEP2023/test.gnn.h5
-data_path=/wclustre/fwk/exatrkx/data/uboone/CHEP2023/CHEP2023-small.evt.h5
+outfile=/wclustre/fwk/exatrkx/data/uboone/CHEP2023/test_explain.gnn.h5
+data_path=/wclustre/fwk/exatrkx/data/uboone/CHEP2023/CHEP2023.gnn.h5
 batch_size=16
 test=True
 
