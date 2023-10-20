@@ -4,6 +4,7 @@ from torch import Tensor
 from torch_geometric.explain import Explanation, GNNExplainer 
 from torch_geometric.explain.config import ModelMode
 from torch_geometric.explain.algorithm.utils import clear_masks, set_masks
+from torch_geometric.data import Batch
 
 
 class HeteroGNNExplainer(GNNExplainer): 
@@ -29,11 +30,12 @@ class HeteroGNNExplainer(GNNExplainer):
 
         return Explanation(node_mask=node_mask, edge_mask=edge_mask)
     
-    def _train(self, model, x: Tensor, edge_index: Tensor, *, target: Tensor, index=None, plane='u', **kwargs):
+
+    def _train(self, model, graph, plane='u', **kwargs):
         ## Use only a single plane - the x tensor used for analysis is different than the tensor used for the forward prediction
 
-        x_mask = ""
-        edge_index_mask = ""
+        x_mask = graph[plane]['x']
+        edge_index_mask = graph[plane, 'plane', plane].edge_index
 
         self._initialize_masks(x_mask, edge_index_mask)
 
@@ -49,11 +51,9 @@ class HeteroGNNExplainer(GNNExplainer):
         for i in range(self.epochs):
             optimizer.zero_grad()
 
-            y_hat, y = model(h, edge_index, **kwargs), target
+            model.step(graph)
 
-            if index is not None:
-                y_hat, y = y_hat[index], y[index]
-
+            y_hat, y = graph[plane]['x_semantic'], graph[plane]['y_semantic']
             loss = self._loss(y_hat, y)
 
             loss.backward()
