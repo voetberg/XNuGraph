@@ -39,31 +39,15 @@ class ExplainLocal:
         Returns:
             nugraph.modes.NuGraph2: Model from a loaded the checkpoint
         """
-        class Graph(models.NuGraph2): 
-            def __init__(self, in_features: int = 4, planar_features: int = 8, nexus_features: int = 8, vertex_features: int = 32, planes: list[str] = ..., semantic_classes: list[str] = ..., event_classes: list[str] = ..., num_iters: int = 5, event_head: bool = True, semantic_head: bool = True, filter_head: bool = False, vertex_head: bool = False, checkpoint: bool = False, lr: float = 0.001):
-                super().__init__(in_features, planar_features, nexus_features, vertex_features, planes, semantic_classes, event_classes, num_iters, event_head, semantic_head, filter_head, vertex_head, checkpoint, lr)
-            
-            def forward(self, x: dict, edge_index_plane: dict, edge_index_nexus: dict, nexus, batch: dict):
-                label = super().forward(x, edge_index_plane, edge_index_nexus, nexus, batch)
-
-                # Output of the network: 
-                # x_semantic: {
-                #     u: Tensor,
-                #     v: Tensor,
-                #     y: Tensor,
-                # },
-            
-                return torch.Tensor([label['x_semantic']['u'], label['x_semantic']['v'],label['x_semantic']['y']])
-        
         try: 
-            model = Graph.load_from_checkpoint(
+            model = models.NuGraph2.load_from_checkpoint(
                 checkpoint_path, 
                 planar_features=64,
                 nexus_features = 16,
                 vertex_features= 40) 
 
         except RuntimeError: 
-            model =  Graph.load_from_checkpoint(
+            model =  models.NuGraph2.load_from_checkpoint(
                 checkpoint_path,  
                 planar_features=64,
                 nexus_features = 16,
