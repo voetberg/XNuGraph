@@ -10,10 +10,9 @@ from torch_geometric.data import Batch
 class HeteroGNNExplainer(GNNExplainer): 
     def __init__(self, epochs: int = 100, lr: float = 0.01, **kwargs):
         super().__init__(epochs, lr, **kwargs)
-        self.model_config.mode = ModelMode.multiclass_classification
 
-    def forward(self, model, x: Tensor, edge_index: Tensor, *, target: Tensor, index: None, plane='u', **kwargs) -> Explanation:
-        self._train(model, x, edge_index, target=target, index=index, plane=plane, **kwargs)
+    def forward(self, model, graph, plane='u', **kwargs) -> Explanation:
+        self._train(model, graph, plane=plane, **kwargs)
 
         node_mask = self._post_process_mask(
             self.node_mask,

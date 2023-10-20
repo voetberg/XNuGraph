@@ -36,8 +36,9 @@ class GNNExplain(ExplainLocal):
                 os.makedirs(file_name)
 
             for index, batch in enumerate(self.data):
-                explaination = self.explain(batch, raw=True)
-                explaination.visualize_graph(f"{file_name}/{index}.png")
+                explainations = self.explain(batch, raw=True)
+                for key in explainations.keys(): 
+                    explainations[key].visualize_graph(f"{file_name}/{index}_plane_{key}.png")
                 
                 if append_explainations: 
                     self.explainations.update(explaination.get_explanation_subgraph())
@@ -47,15 +48,10 @@ class GNNExplain(ExplainLocal):
             explaination.visualize_graph(f"{self.out_path}/{file_name}")
 
     
-    def explain(self, data, raw:bool=True, **kwds):
-        x, edge_plane, edge_nexus, nexus, batch = self.unpack(data)
+    def explain(self, data, raw:bool=True):
         plane_explain = {}
         for plane in self.planes: 
-            if hasattr(kwds, "node_index"): 
-                explaination = self.explainer(x, edge_plane, kwds.node_index, edge_index_nexus=edge_nexus, plane=plane, nexus=nexus, batch=batch)
-            else: 
-                explaination = self.explainer(x, edge_plane, edge_index_nexus=edge_nexus, nexus=nexus, batch=batch, plane=plane)
-
+            explaination = self.explainer(data,  plane=plane)
             if not raw: 
                 explaination = explaination.get_explanation_subgraph()
             plane_explain[plane] = explaination
