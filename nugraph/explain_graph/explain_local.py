@@ -49,7 +49,6 @@ class ExplainLocal:
 
         self.explainer = None
 
-   
     def unpack(self, data): 
         """Unpack the data to be used by the model"""
         return (

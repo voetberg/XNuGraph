@@ -32,7 +32,7 @@ def run_explaination(checkpoint, algorithm, outfile, data_path, batch_size, test
 
     if test: 
         data = next(iter(explain.data))
-        e = explain.explain(data, raw=True, node_index=[1])
+        e = explain.explain(data, raw=True)
         explain.visualize(e, file_name="test.png")
         
     else: 
