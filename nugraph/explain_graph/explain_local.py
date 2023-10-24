@@ -25,9 +25,9 @@ class ExplainLocal:
             batch_size (int, optional): Batch size for the data loader. Defaults to 16.
         """
 
-        load = Load(data_path=data_path, checkpoint_path=checkpoint_path, batch_size=batch_size, test=test)
-        self.data = load.data
-        self.model = load.model
+        self.load = Load(data_path=data_path, checkpoint_path=checkpoint_path, batch_size=batch_size, test=test)
+        self.data = self.load.data
+        self.model = self.load.model
 
         self.explainations = Explanation()
         self.out_path = out_path.rstrip('/')

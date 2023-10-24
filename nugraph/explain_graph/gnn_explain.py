@@ -51,7 +51,9 @@ class GNNExplain(ExplainLocal):
 
     
     def explain(self, data, raw:bool=True):
-        explaination = self.explainer(data)
+
+        x, plane_edge, nextus_edge, batch, plane = self.load.unpack()
+        explaination = self.explainer(x, plane_edge)
         if not raw: 
             explaination = explaination.get_explanation_subgraph()
 
