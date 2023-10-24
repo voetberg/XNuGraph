@@ -13,11 +13,13 @@ class HeteroGNNExplainer(GNNExplainer):
     def forward(self, model, x, edge_index, target, index, **kwargs) -> Explanation:
 
         graph = HeteroData()
-        
+
         for key in x.keys(): 
             graph[key].x = x[key]
         for key in edge_index.keys(): 
             graph[key].edge_index = edge_index[key]
+        for key in kwargs.nexus_edge.keys(): 
+            graph[key].edge_index = kwargs.nexus_edge
 
         self._train(model, graph, **kwargs)
 
