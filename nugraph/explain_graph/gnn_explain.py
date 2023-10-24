@@ -9,21 +9,23 @@ class GNNExplain(ExplainLocal):
                  out_path: str = "explainations/", 
                  checkpoint_path: str = None,
                  batch_size: int = 16, 
+                 test:bool = False,
                  planes=['u', 'v', 'y']):
-        super().__init__(data_path, out_path, checkpoint_path, batch_size)
+        super().__init__(data_path, out_path, checkpoint_path, batch_size, test)
         model_config =  ModelConfig(
             mode='multiclass_classification',
-            task_level='node')
+            task_level='node', 
+            return_type="raw")
         
         self.explainer = Explainer(
             model=self.model, 
-            algorithm=HeteroGNNExplainer(epochs=10), 
+            algorithm=HeteroGNNExplainer(epochs=10, planes=planes), 
             explanation_type='model', 
             model_config=model_config,
             node_mask_type="attributes",
             edge_mask_type="object",
         )
-        self.planes = planes
+
 
     def visualize(self, explaination=None, file_name=None):
         append_explainations = True
@@ -49,11 +51,8 @@ class GNNExplain(ExplainLocal):
 
     
     def explain(self, data, raw:bool=True):
-        plane_explain = {}
-        for plane in self.planes: 
-            explaination = self.explainer(data,  plane=plane)
-            if not raw: 
-                explaination = explaination.get_explanation_subgraph()
-            plane_explain[plane] = explaination
+        explaination = self.explainer(data)
+        if not raw: 
+            explaination = explaination.get_explanation_subgraph()
 
-        return plane_explain 
+        return explaination 
