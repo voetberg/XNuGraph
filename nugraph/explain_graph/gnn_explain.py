@@ -13,7 +13,8 @@ class GNNExplain(ExplainLocal):
         super().__init__(data_path, out_path, checkpoint_path, batch_size)
         model_config =  ModelConfig(
             mode='multiclass_classification',
-            task_level='node')
+            task_level='node', 
+            return_type="raw")
         
         self.explainer = Explainer(
             model=self.model, 
