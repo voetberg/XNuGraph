@@ -1,6 +1,7 @@
 import tqdm 
 import os 
 from nugraph import data, models
+from nugraph.explain_graph.load import Load
 import h5py
 
 import torch 
@@ -10,8 +11,9 @@ from torch_geometric.explain import Explanation, metric
 from torch_geometric.data import Batch, HeteroData
 from torch_geometric.utils import unbatch
 
+
 class ExplainLocal:
-    def __init__(self, data_path:str, out_path:str = "explainations/",checkpoint_path:str=None, batch_size:int=16):
+    def __init__(self, data_path:str, out_path:str = "explainations/",checkpoint_path:str=None, batch_size:int=16, test:bool=False):
         """
         Abstract class 
         Perform a local explaination method on a single datapoint
@@ -22,39 +24,15 @@ class ExplainLocal:
             checkpoint_path (str, optional): Checkpoint to trained model. If not supplied, creates a new model. Defaults to None.
             batch_size (int, optional): Batch size for the data loader. Defaults to 16.
         """
-        self.data = self.load_data(data_path, batch_size)
 
-        self.model = self.load_checkpoint(checkpoint_path) if checkpoint_path is not None else models.NuGraph2()
+        self.load = Load(data_path=data_path, checkpoint_path=checkpoint_path, batch_size=batch_size, test=test)
+        self.data = self.load.data
+        self.model = self.load.model
+
         self.explainations = Explanation()
         self.out_path = out_path.rstrip('/')
 
         self.explainer = None
-
-    def load_checkpoint(self, checkpoint_path:str):
-        """Load a saved checkpoint to perform inference
-
-        Args:
-            checkpoint_path (str): Trained checkpoint
-
-        Returns:
-            nugraph.modes.NuGraph2: Model from a loaded the checkpoint
-        """
-        try: 
-            model = models.NuGraph2.load_from_checkpoint(
-                checkpoint_path, 
-                planar_features=64,
-                nexus_features = 16,
-                vertex_features= 40) 
-
-        except RuntimeError: 
-            model =  models.NuGraph2.load_from_checkpoint(
-                checkpoint_path,  
-                planar_features=64,
-                nexus_features = 16,
-                vertex_features= 40, 
-                map_location=torch.device('cpu'))
-        model.eval() 
-        return model 
 
     def unpack(self, data): 
         """Unpack the data to be used by the model"""
@@ -76,19 +54,6 @@ class ExplainLocal:
         for _, batch in enumerate(tqdm.tqdm(self.data)):
             explaination = self.explain(batch, raw=False, **explaintion_kwargs)
             self.explainations.update(explaination)
-
-    def load_data(self, data_path:str, batch_size:int): 
-        """
-        Load h5 dataset
-
-        Args:
-            data_path (str): location where data is stored
-            batch_size (int): number of samples to load into memory at a single time
-
-        Returns:
-            nugraph.data.H5Dataset: Loaded data
-        """
-        return data.H5DataModule(data_path, batch_size=batch_size).val_dataloader()
 
     def explain(self, data, **kwargs): 
         """
