@@ -1,27 +1,40 @@
-from typing import Any, Optional, Union
+from typing import Any, Dict, Optional, Union
 import torch
 from torch import Tensor
-from torch_geometric.explain import Explanation, GNNExplainer 
+from torch_geometric.explain import Explainer, Explanation, ExplainerAlgorithm, GNNExplainer 
 from torch_geometric.explain.algorithm.utils import set_masks
-from torch_geometric.data import HeteroData
+import pandas as pd 
+from torch_geometric.data import HeteroData, DataLoader
+from nugraph.explain_graph.load import Load
+from nugraph import util
+import pytorch_lightning as pl
+
+
+class HeteroExplainer(Explainer): 
+    def __init__(self, model: torch.nn.Module, algorithm: ExplainerAlgorithm, explanation_type, edge_mask_type, model_config, node_mask_type = None, threshold_config = None):
+        super().__init__(model, algorithm, explanation_type, model_config, node_mask_type, edge_mask_type, threshold_config)
+
+    def get_prediction(self, *args, **kwargs) -> Tensor:
+        x, plane_edge, nexus_edge, nexus, batch = Load.unpack(kwargs['graph'])
+        return self.model(x, plane_edge, nexus_edge, nexus, batch)
+
+    def get_target(self, prediction: HeteroData) -> Tensor:
+        preds = prediction['x_semantic']
+        target = {}
+        for plane in preds.keys(): 
+            target[plane] = pd.Categorical(prediction["x_semantic"][plane][0].detach()).codes
+        return target
+
 
 class HeteroGNNExplainer(GNNExplainer): 
     def __init__(self, epochs: int = 100, lr: float = 0.01, planes=[], **kwargs):
         super().__init__(epochs, lr, **kwargs)
         self.planes = planes
 
-    def forward(self, model, x, edge_index, target, index, **kwargs) -> Explanation:
+    def forward(self, model, x, edge_index, **kwargs):
+        graph = kwargs['graph']
 
-        graph = HeteroData()
-
-        for key in x.keys(): 
-            graph[key].x = x[key]
-        for key in edge_index.keys(): 
-            graph[key].edge_index = edge_index[key]
-        for key in kwargs.nexus_edge.keys(): 
-            graph[key].edge_index = kwargs.nexus_edge
-
-        self._train(model, graph, **kwargs)
+        self._train(model, graph)
 
         node_mask = self._post_process_mask(
             self.node_mask,
@@ -39,13 +52,18 @@ class HeteroGNNExplainer(GNNExplainer):
 
         return Explanation(node_mask=node_mask, edge_mask=edge_mask)
     
-    def _train(self, model, graph, **kwargs):
+    def _train(self, model, graph,  **kwargs):
 
+        accelerator, device = util.configure_device()
+        trainer = pl.Trainer(accelerator=accelerator,
+                            logger=False)
+        predictions = trainer.predict(model, dataloaders=graph)[0]
+
+        dataset = graph.dataset
         for plane in self.planes: 
             ## Use only a single plane - the x tensor used for analysis is different than the tensor used for the forward prediction
-
-            x_mask = graph[plane]['x']
-            edge_index_mask = graph[plane, 'plane', plane].edge_index
+            x_mask = dataset[plane]['x']
+            edge_index_mask = dataset[plane, 'plane', plane]['edge_index']
 
             self._initialize_masks(x_mask, edge_index_mask)
 
@@ -60,10 +78,10 @@ class HeteroGNNExplainer(GNNExplainer):
 
             for i in range(self.epochs):
                 optimizer.zero_grad()
-
-                model.step(graph)
-
-                y_hat, y = graph[plane]['x_semantic'], graph[plane]['y_semantic']
+                
+                y_hat =  predictions[plane]['x_semantic']
+                y = dataset[plane]['y_semantic']
+                
                 loss = self._loss(y_hat, y)
 
                 loss.backward()

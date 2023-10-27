@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 import torch
 import pytorch_lightning as pl
 
@@ -6,7 +7,7 @@ from nugraph.data import H5DataModule
 from nugraph import util
 from torch_geometric.loader import DataLoader
 
-#from torch_geometric.data import Batch
+from torch_geometric.data import Batch, HeteroData
 
 class Load: 
     def __init__(self,
@@ -16,9 +17,10 @@ class Load:
                  test=False) -> None:
         self.model = self.load_checkpoint(checkpoint_path) if checkpoint_path is not None else NuGraph2()
         self.data = self.load_data(data_path, batch_size)
+        self.planes = ['u', 'v', 'y']
         if test: 
             self.data = DataLoader(next(iter(self.data)),
-                          batch_size=self.batch_size)
+                          batch_size=batch_size)
         self.predictions = self.make_predictions()
 
     def load_checkpoint(self, checkpoint_path, graph=NuGraph2): 
@@ -43,12 +45,19 @@ class Load:
     def load_data(self, data_path, batch_size=1): 
         return H5DataModule(data_path, batch_size=batch_size).val_dataloader()
     
-    def unpack(self, data_batch): 
+    @staticmethod
+    def unpack(data_batch, planes=['u', 'v', 'y']): 
+        try: 
+            data_batch = Batch.from_data_list([datum for datum in data_batch])
+        except NotImplementedError: 
+            # Isn't an iterable
+            pass 
+        
         return (data_batch.collect('x'), 
-                { p: data_batch[p, 'plane', p].edge_index for p in self.planes }, 
-                { p: data_batch[p, 'nexus', 'sp'].edge_index for p in self.planes }, 
+                { p: data_batch[p, 'plane', p].edge_index for p in planes }, 
+                { p: data_batch[p, 'nexus', 'sp'].edge_index for p in planes }, 
                 torch.empty(data_batch['sp'].num_nodes, 0), 
-                { p: data_batch[p].batch for p in self.planes }
+                { p: data_batch[p].batch for p in planes }
                 )
 
     def make_predictions(self): 

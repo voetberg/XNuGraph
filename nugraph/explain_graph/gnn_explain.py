@@ -1,6 +1,6 @@
 from nugraph.explain_graph.explain_local import ExplainLocal
 from torch_geometric.explain import Explainer, ModelConfig
-from nugraph.explain_graph.algorithms.hetero_gnnexplaner import HeteroGNNExplainer
+from nugraph.explain_graph.algorithms.hetero_gnnexplaner import HeteroGNNExplainer, HeteroExplainer
 import os 
 
 class GNNExplain(ExplainLocal): 
@@ -17,7 +17,7 @@ class GNNExplain(ExplainLocal):
             task_level='node', 
             return_type="raw")
         
-        self.explainer = Explainer(
+        self.explainer = HeteroExplainer(
             model=self.model, 
             algorithm=HeteroGNNExplainer(epochs=10, planes=planes), 
             explanation_type='model', 
@@ -52,8 +52,9 @@ class GNNExplain(ExplainLocal):
     
     def explain(self, data, raw:bool=True):
 
-        x, plane_edge, nexus_edge, _, _ = self.load.unpack()
-        explaination = self.explainer(x, plane_edge, nexus_edge=nexus_edge)
+        x, plane_edge, _, _, _ = self.load.unpack(data)
+        explaination = self.explainer(x, plane_edge, graph=data)
+        
         if not raw: 
             explaination = explaination.get_explanation_subgraph()
 
