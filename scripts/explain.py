@@ -15,7 +15,7 @@ def configure():
     parser.add_argument('--data_path', type=str,
                           default='/raid/uboone/CHEP2023/CHEP2023.gnn.h5',
                           help='Location of input data file')
-    parser.add_argument('--batch_size', type=int, default=64,
+    parser.add_argument('--batch_size', type=int, default=2,
                           help='Size of each batch of graphs')
     parser.add_argument("--test", '-t', type=bool, default=False, help='')
     return parser.parse_args()
@@ -28,10 +28,11 @@ def run_explaination(checkpoint, algorithm, outfile, data_path, batch_size, test
         data_path=data_path, 
         out_path=outfile, 
         checkpoint_path=checkpoint, 
-        batch_size=batch_size)
+        batch_size=batch_size, 
+        test=test)
 
     if test: 
-        data = next(iter(explain.data))
+        data = explain.data
         e = explain.explain(data, raw=True)
         explain.visualize(e, file_name="test.png")
         

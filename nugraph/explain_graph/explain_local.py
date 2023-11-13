@@ -11,24 +11,9 @@ from torch_geometric.explain import Explanation, metric
 from torch_geometric.data import Batch, HeteroData
 from torch_geometric.utils import unbatch
 
-class Graph(models.NuGraph2): 
-    def __init__(self, in_features: int = 4, planar_features: int = 8, nexus_features: int = 8, vertex_features: int = 32, planes: list[str] = ..., semantic_classes: list[str] = ..., event_classes: list[str] = ..., num_iters: int = 5, event_head: bool = True, semantic_head: bool = True, filter_head: bool = False, vertex_head: bool = False, checkpoint: bool = False, lr: float = 0.001):
-        super().__init__(in_features, planar_features, nexus_features, vertex_features, planes, semantic_classes, event_classes, num_iters, event_head, semantic_head, filter_head, vertex_head, checkpoint, lr)
-    
-    def forward(self, x: dict, edge_index_plane: dict, edge_index_nexus: dict, nexus, batch: dict):
-        label = super().forward(x, edge_index_plane, edge_index_nexus, nexus, batch)
-
-        # Output of the network: 
-        # x_semantic: {
-        #     u: Tensor,
-        #     v: Tensor,
-        #     y: Tensor,
-        # },
-    
-        return torch.Tensor([label['x_semantic']['u'], label['x_semantic']['v'],label['x_semantic']['y']])
 
 class ExplainLocal:
-    def __init__(self, data_path:str, out_path:str = "explainations/",checkpoint_path:str=None, batch_size:int=16):
+    def __init__(self, data_path:str, out_path:str = "explainations/",checkpoint_path:str=None, batch_size:int=16, test:bool=False):
         """
         Abstract class 
         Perform a local explaination method on a single datapoint
@@ -40,9 +25,9 @@ class ExplainLocal:
             batch_size (int, optional): Batch size for the data loader. Defaults to 16.
         """
 
-        load = Load(data_path=data_path, checkpoint_path=checkpoint_path, batch_size=batch_size)
-        self.data = load.data
-        self.model = load.model
+        self.load = Load(data_path=data_path, checkpoint_path=checkpoint_path, batch_size=batch_size, test=test)
+        self.data = self.load.data
+        self.model = self.load.model
 
         self.explainations = Explanation()
         self.out_path = out_path.rstrip('/')
