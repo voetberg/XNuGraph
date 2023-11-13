@@ -31,7 +31,8 @@ class ExplainLocal:
 
         self.explainations = Explanation()
         self.out_path = out_path.rstrip('/')
-
+        if not os.path.exists(self.out_path): 
+            os.makedirs(self.out_path)
         self.explainer = None
 
     def unpack(self, data): 
