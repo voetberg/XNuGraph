@@ -4,10 +4,11 @@ import torch
 from torch import Tensor
 from torch.nn.parameter import Parameter
 
-from torch_geometric.explain import Explainer, Explanation, ExplainerAlgorithm, GNNExplainer 
+from torch_geometric.explain import Explainer, Explanation, ExplainerAlgorithm, GNNExplainer, HeteroExplanation 
 from torch_geometric.explain.algorithm.utils import set_masks
 import pandas as pd 
-from torch_geometric.data import HeteroData, DataLoader
+from torch_geometric.data import HeteroData, DataLoader, batch
+from torch_geometric.typing import EdgeType, NodeType
 from nugraph.explain_graph.load import Load
 from nugraph import util
 import pytorch_lightning as pl
@@ -29,18 +30,34 @@ class HeteroExplainer(Explainer):
             target[plane] = pd.Categorical(prediction["x_semantic"][plane][0].detach()).codes
         return target
 
+    def __call__(self, graph) -> Explanation | HeteroExplanation:
+        x, edge_index, target, index = None, None, None, None
+        kwargs={"graph":graph}
+        explaination =  super().__call__(x, edge_index, target=target, index=index, **kwargs)
+        graph = next(iter(graph))
+        if 'edge_mask' in explaination: 
+            graph['edge_mask'] = explaination['edge_mask']
+        if "node_mask" in explaination: 
+            graph['node_mask'] = explaination['node_mask']
+        return graph
 
 class HeteroGNNExplainer(GNNExplainer): 
-    def __init__(self, epochs: int = 100, lr: float = 0.01, plane='u', **kwargs):
+    def __init__(self, epochs: int = 100, lr: float = 0.01, plane='u', single_plane=True, **kwargs):
         super().__init__(epochs, lr, **kwargs)
         self.plane = plane
+        self.single_plane = single_plane
+        if not self.single_plane: 
+            assert type(plane) == list
 
-    def forward(self, model, x, edge_index, **kwargs):
+    def forward(self, model, x, edge_index=None, node_index=None, **kwargs):
         graph = next(iter(kwargs['graph']))
+
         model.nexus_net.explain = False 
+
         for decoder in model.decoders: 
             decoder.explain = False 
-        self._train(model, graph)
+
+        self._train(model, graph, node_index)
 
         node_mask = self._post_process_mask(
             self.node_mask,
@@ -65,42 +82,98 @@ class HeteroGNNExplainer(GNNExplainer):
 
         return explainer
     
-    def _train(self, model, graph,  **kwargs):
-
-        model.step(graph)
-
-       
-        ## Use only a single plane - the x tensor used for analysis is different than the tensor used for the forward prediction
-        x_mask = graph[self.plane]['x']
-        x_mask.requires_grad = True
-        edge_index_mask = graph[self.plane, 'plane', self.plane]['edge_index'].to(torch.float)
-        edge_index_mask.requires_grad = True
+    def assign_planar_masks(self, graph, plane): 
+        x_mask = graph[plane]['x']
+        edge_index_mask = graph[plane, 'plane', plane]['edge_index'].to(torch.float)
 
         (N, F), E = x_mask.size(), edge_index_mask.size(1)
-        self.node_mask = Parameter(torch.randn(N, 1) * 0.1)
+        node_mask = Parameter(torch.randn(N, F) * 0.1)
 
         std = torch.nn.init.calculate_gain('relu') * math.sqrt(2.0 / (2 * N))
-        self.edge_mask = Parameter(torch.randn(E) * std)
-
+        edge_mask = Parameter(torch.randn(E) * std)
 
         parameters = []
         if self.node_mask is not None:
-            parameters.append(self.node_mask)
+            parameters.append(node_mask)
+
         if self.edge_mask is not None:
-            set_masks(model, self.edge_mask, edge_index_mask, apply_sigmoid=True)
-            parameters.append(self.edge_mask)
+            parameters.append(edge_mask)
+        
+        return parameters, node_mask, edge_mask
+
+    def update_planar_graph(self, graph, plane): 
+        x = graph[plane]['x']
+        h = x if self.node_mask is None else x * self.node_mask.sigmoid()
+        graph[plane]['x'] = h 
+
+        # Update the edge masks 
+        edges =  graph[plane, 'plane', plane]['edge_index'].to(torch.float)
+        edge_mask_h = edges if self.edge_mask is None else edges * self.edge_mask.sigmoid()
+        graph[plane, 'plane', plane]['edge_index'] = edge_mask_h
+
+        return graph
+
+    def assign_nexus_masks(self, graph): 
+        print(graph)
+        self.node_mask = {}
+        self.edge_mask = {}
+        all_parameters = []
+
+        ## planar masks 
+        for plane in self.plane: 
+            ## planar masks 
+            parameters, node_mask, edge_mask = self.assign_planar_masks(graph, plane)
+            all_parameters+=parameters
+            self.node_mask[plane] = node_mask
+            self.edge_mask[plane] = edge_mask
+            
+            ## nexus masks 
+            nexus_edge = graph[(plane, 'nexus', 'sp')]['edge_index'].to(torch.float)
+            N, _ = node_mask.size()
+            E = nexus_edge.size(1)
+            std = torch.nn.init.calculate_gain('relu') * math.sqrt(2.0 / (2 * N))
+            edge_mask = Parameter(torch.randn(E) * std)
+
+            self.edge_mask[f"{plane}_nexus"] = edge_mask
+            all_parameters.append(edge_mask)
+
+        return all_parameters
+    
+    def update_nexus_masks(self, graph): 
+        for plane in self.plane: 
+            plane_node_mask = ""
+            plane_edge_planar_mask = ""
+            plane_edge_nexus_mask = ""
+            
+
+    def _train(self, model, graph, node_index=None, **kwargs):
+        graph.requires_grad=True
+
+        if self.single_plane: 
+            parameters, self.node_mask, self.edge_mask = self.assign_planar_masks(graph, self.plane)
+        else: 
+            parameters = self.assign_nexus_masks(graph)
 
         optimizer = torch.optim.Adam(parameters, lr=self.lr)
-
+ 
         for i in range(self.epochs):
             optimizer.zero_grad()
 
+            if self.single_plane: 
+                graph = self.update_planar_graph(graph, self.plane)
+            else: 
+                graph = self.update_nexus_masks(graph)
+
+            model.step(graph)
+
             y = graph[self.plane]['y_semantic'].to(torch.float)
-            y.requires_grad = True
             y_hat = torch.argmax(graph[self.plane]['x_semantic'], dim=-1).to(torch.float)
-            y_hat.requires_grad = True
 
             assert len(y) == len(y_hat) ## Personal check that things are not weirdly transposed
+
+            if node_index is not None: 
+                y = y[node_index]
+                y_hat = y_hat[node_index]
             
             loss = self._loss(y_hat, y)
             loss.backward()
@@ -144,3 +217,4 @@ class HeteroGNNExplainer(GNNExplainer):
         loss = loss + self.coeffs['node_feat_ent'] * ent.mean()
 
         return loss
+
