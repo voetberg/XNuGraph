@@ -125,20 +125,59 @@ class GlobalGNNExplain(PlanarGNNExplain):
             edge_mask_type="object",
         )]
 
+    def filter_edges(self, edges, filter): 
+        filter = (filter.sigmoid() >= 0.5)
+        edges = edges[:,filter]
+        return edges
+
     def get_explaination_subgraph(self, explaination):
         explaination = explaination[0]
+        explination_graph = HeteroData()
+        for plane in self.planes: 
 
-        # Isolate the masks
-        node_masks = ""
-        edge_masks = ""
-        
-        ## Apply the planar masks 
+            # Apply the mask on each plane: 
+            # Rules: Edges mask applied to both 
+            # Apply the mask to the nodes
+                # Remove the nodes from the edge indices if they are not in the nodes post-mask
+            
+            node_mask = explaination['node_mask'][plane].sigmoid()
+
+            edge_weights = explaination['edge_mask'][plane].sigmoid()
+            nodes = (explaination[plane]['x']*node_mask.to(float))[:,0].flatten().nonzero()
+            edges = explaination[(plane, "plane", plane)]['edge_index']
+
+            # Confusing conditional 
+            # Only include an edge if both of the nodes included in the edge is not in node mask
+            edge_mask = torch.logical_and(torch.isin(edges[0], nodes), torch.isin(edges[1], nodes))
+            edge_weight_mask = edge_weights.sigmoid()
+            edge_weights = edge_weight_mask*edge_mask.to(int)
+
+            edges = self.filter_edges(edges, edge_mask)
+            edge_weights = self.filter_edges(edge_weights.expand(2,edge_mask.size(0)), edge_mask)[0]
+            assert edges.size(0)==2
+
+            explination_graph[(plane, "plane", plane)]['edge_index'] = edges
+            explination_graph[(plane, "plane", plane)]['weight'] = edge_weights
+
+            explination_graph[plane]['node_mask'] = explaination['node_mask'][plane]
+            explination_graph[plane]['pos'] = explaination[plane]['pos']  
+            explination_graph[plane]['x'] = explaination[plane]['x']
+
+            # TODO: Swap out for the actual labels
+            explination_graph[plane]['pred_label'] = explaination[plane]['y_semantic']
+            explination_graph[plane]['sem_label'] = explaination[plane]['y_semantic']
 
 
-        ## Apply the nexus masks
+        # Make the nexus graph: 
+        # get the nodes that have a connection to the nexus - use their weight and pos to show rep in nexus plane
+        explination_graph['nexus'] = {}
+        for plane in self.planes: 
+            ""
+
+
+
+        return explination_graph
 
     def visualize(self, explaination=None, file_name="explaination_graph", interactive=False):
-        return super().visualize(explaination, file_name, interactive)
-
-        ## TODO         
+        return super().visualize(explaination, file_name, interactive)  
     

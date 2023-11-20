@@ -82,7 +82,6 @@ class EdgeVisuals:
         return drawn_plot
  
     def make_subgraph(self, graph, plane='u'): 
-        
         subgraph_nx = nx.Graph()
 
         edge_node_1 = graph[(plane, "plane", plane)]['edge_index'][0]
