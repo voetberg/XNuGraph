@@ -1,8 +1,9 @@
-from nugraph.explain_graph.gnn_explain import GNNExplain
+from nugraph.explain_graph.gnn_explain import PlanarGNNExplain, GlobalGNNExplain
 import argparse
 
 explainations = {
-    "GNNExplainer":GNNExplain
+    "GNNExplainer":PlanarGNNExplain, 
+    "NexusGNNExplainer": GlobalGNNExplain
 }
 
 def configure(): 
@@ -35,7 +36,6 @@ def run_explaination(checkpoint, algorithm, outfile, data_path, batch_size, test
         data = explain.data
         e = explain.explain(data, raw=True)
         explain.visualize(e, file_name="test")
-        #explain.visualize(e, interactive=True, file_name="test")
         
     else: 
         #TODO Nodes to explain for each graph - or a different data framework entirely

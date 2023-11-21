@@ -16,16 +16,17 @@ class Load:
                  checkpoint_path="/wclustre/fwk/exatrkx/data/uboone/CHEP2023/paper.ckpt", 
                  data_path="/wclustre/fwk/exatrkx/data/uboone/CHEP2023/CHEP2023.gnn.h5", 
                  batch_size=1, 
-                 test=False) -> None:
-        
+                 test=False, 
+                 planes=['u','v', 'y']) -> None:
         if test: 
-            checkpoint_path = None 
-            data_path = "./test_data.h5"
-        self.model = self.load_checkpoint(checkpoint_path) if checkpoint_path is not None else NuGraph2(in_features=6, checkpoint=False)
-        self.data = self.load_data(data_path, batch_size)
+            self.data = self.load_data("./test_data.h5", batch_size=1)
+            self.model = NuGraph2(in_features=6, checkpoint=False, planes=planes)
+        else: 
+            self.data = self.load_data(data_path, batch_size)
+            self.model = self.load_checkpoint(checkpoint_path) if checkpoint_path is not None else NuGraph2()
 
-        self.planes = ['u', 'v', 'y']
-        self.predictions = self.make_predictions()
+        self.planes = planes
+        #self.predictions = self.make_predictions()
 
     def load_checkpoint(self, checkpoint_path, graph=NuGraph2): 
         # Assumed pre-trained model that can perform inference on the loaded data
@@ -103,8 +104,9 @@ class Load:
 
         f.close()
 
+# if __name__ == "__main__": 
+#     Load(test=True, batch_size=64).save_mini_batch()
 
-if __name__ == "__main__": 
+#     #H5DataModule.generate_samples("./test_data.h5")#, batch_size=16)
+#     H5Interface("./test_data.h5").load_heterodata("validation")
 
-    #H5DataModule.generate_samples("./test_data.h5")#, batch_size=16)
-    Load(checkpoint_path=None, data_path="test_data.h5", test=True, batch_size=1)

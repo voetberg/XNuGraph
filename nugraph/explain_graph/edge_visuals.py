@@ -14,15 +14,24 @@ import matplotlib.cm as cmx
 
 class EdgeVisuals: 
 
-    def __init__(self, test=False, checkpoint_path=None, data_path=None, weight_colormap='viridis') -> None:
+
+    def __init__(self, 
+                test=False, 
+                checkpoint_path=None, 
+                data_path=None, 
+                planes=['u', 'v', 'y'], 
+                semantic_classes = ['MIP','HIP','shower','michel','diffuse'],
+                weight_colormap='viridis') -> None:
+
         if (data_path is not None) or (test): 
             load = Load(test=test, checkpoint_path=checkpoint_path, data_path=data_path, batch_size=1)
             self.model = load.model
             self.data = load.data.dataset
             self.predictions = load.predictions
 
-        self.semantic_classes = ['MIP','HIP','shower','michel','diffuse']
-        self.planes = ['u', 'v', 'y']
+        self.semantic_classes = semantic_classes
+        self.planes = planes
+
         self.cmap = weight_colormap
 
     def extract_weights(self, graph, plane, return_value=False): 
@@ -39,10 +48,12 @@ class EdgeVisuals:
 
         if "node_mask" in graph[plane].keys(): 
             node_size = graph[plane]["node_mask"]
-            node_size = (node_size - node_size.min())/(node_size.max() - node_size.min())*5
+            node_size = (node_size - node_size.min())/(node_size.max() - node_size.min())*20
+            node_size = node_size.ravel().tolist()
 
         else: 
-            node_size = 2
+            node_size = [5 for _ in range(len(graph[plane]['x']))]
+
 
         if return_value: 
             return weights
@@ -52,12 +63,14 @@ class EdgeVisuals:
     
     def plot_graph(self, graph, subgraph, plane, node_list, axes): 
         nodes = subgraph.nodes
-        position = {node: graph[plane]['pos'][node].tolist() for node in nodes}
 
+
+        position = {node: graph[plane]['pos'][node].tolist() for node in nodes}
         if node_list is None: 
             node_list = list(subgraph)
 
         weight_colors, node_size = self.extract_weights(graph, plane)
+        node_size = [node_size[int(node.item())] for node in nodes]
 
         edge_list = subgraph.edges(node_list)
         drawn_plot = nx.draw_networkx(
@@ -67,14 +80,14 @@ class EdgeVisuals:
               nodelist=node_list, 
               edgelist=edge_list, 
               node_size=node_size, 
-              width=1, 
-              node_color='k',
+              width=5, 
+              node_color='red',
+
               edge_color=weight_colors,
               ax=axes) 
         return drawn_plot
  
     def make_subgraph(self, graph, plane='u'): 
-        
         subgraph_nx = nx.Graph()
 
         edge_node_1 = graph[(plane, "plane", plane)]['edge_index'][0]
@@ -83,7 +96,8 @@ class EdgeVisuals:
         if "weight" in graph[(plane, "plane", plane)].keys(): 
             weight = graph[(plane, "plane", plane)]['weight']
             for v, u, w in zip(edge_node_1, edge_node_2, weight):
-                subgraph_nx.add_edge(v, u, weight=w)
+                if w.sigmoid()!=0: 
+                    subgraph_nx.add_edge(v, u, weight=w)
 
         else: 
             for v, u in zip(edge_node_1, edge_node_2):
@@ -109,7 +123,8 @@ class EdgeVisuals:
 
         return graph 
     
-    def plot(self, data_index=0, graph=None, incorrect_items=True, semantic_class=None, not_in=False, title="", outdir=".", file_name="prediction_plot.png"): 
+
+    def plot(self, data_index=0, graph=None, incorrect_items=False, semantic_class=None, not_in=False, title="", outdir=".", file_name="prediction_plot.png"): 
         """_summary_
 
         Args:

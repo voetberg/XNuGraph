@@ -24,7 +24,6 @@ class ExplainLocal:
             checkpoint_path (str, optional): Checkpoint to trained model. If not supplied, creates a new model. Defaults to None.
             batch_size (int, optional): Batch size for the data loader. Defaults to 16.
         """
-
         self.load = Load(data_path=data_path, checkpoint_path=checkpoint_path, batch_size=batch_size, test=test)
         self.data = self.load.data
         self.model = self.load.model
