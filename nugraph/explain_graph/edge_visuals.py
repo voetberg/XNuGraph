@@ -14,6 +14,7 @@ import matplotlib.cm as cmx
 
 class EdgeVisuals: 
 
+
     def __init__(self, 
                 test=False, 
                 checkpoint_path=None, 
@@ -21,6 +22,7 @@ class EdgeVisuals:
                 planes=['u', 'v', 'y'], 
                 semantic_classes = ['MIP','HIP','shower','michel','diffuse'],
                 weight_colormap='viridis') -> None:
+
         if (data_path is not None) or (test): 
             load = Load(test=test, checkpoint_path=checkpoint_path, data_path=data_path, batch_size=1)
             self.model = load.model
@@ -29,6 +31,7 @@ class EdgeVisuals:
 
         self.semantic_classes = semantic_classes
         self.planes = planes
+
         self.cmap = weight_colormap
 
     def extract_weights(self, graph, plane, return_value=False): 
@@ -51,6 +54,7 @@ class EdgeVisuals:
         else: 
             node_size = [5 for _ in range(len(graph[plane]['x']))]
 
+
         if return_value: 
             return weights
         
@@ -59,6 +63,7 @@ class EdgeVisuals:
     
     def plot_graph(self, graph, subgraph, plane, node_list, axes): 
         nodes = subgraph.nodes
+
 
         position = {node: graph[plane]['pos'][node].tolist() for node in nodes}
         if node_list is None: 
@@ -77,6 +82,7 @@ class EdgeVisuals:
               node_size=node_size, 
               width=5, 
               node_color='red',
+
               edge_color=weight_colors,
               ax=axes) 
         return drawn_plot
@@ -117,6 +123,7 @@ class EdgeVisuals:
 
         return graph 
     
+
     def plot(self, data_index=0, graph=None, incorrect_items=False, semantic_class=None, not_in=False, title="", outdir=".", file_name="prediction_plot.png"): 
         """_summary_
 

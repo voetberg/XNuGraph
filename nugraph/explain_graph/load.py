@@ -51,9 +51,23 @@ class Load:
         return H5DataModule(data_path, batch_size=batch_size).val_dataloader()
     
     def load_test_data(self, data_path, batch_size=1): 
-        with h5py.File(data_path, "r") as f: 
-            dataset = HeteroData(f["dataset/validation"])
-        return Batch(dataset)
+        with h5py.File(data_path, "a") as f: 
+            data = list(f['dataset']) 
+            if "samples/train" not in f: 
+                f['samples/train'] = data
+                f['samples/validation'] = data
+                f['samples/test'] = data
+            if "datasize/train" not in f: 
+                f['datasize/train'] = [ 0 for _ in range(len(data)) ]
+
+            f.close()
+        try:
+            dataset = H5DataModule(data_path, batch_size).val_dataloader()
+        except: 
+            H5DataModule.generate_norm(data_path, batch_size)
+            dataset = H5DataModule(data_path, batch_size).val_dataloader()
+
+        return dataset
 
     @staticmethod
     def unpack(data_batch, planes=['u', 'v', 'y']): 
@@ -83,20 +97,16 @@ class Load:
         interface = H5Interface(h5_file)
         interface.save("validation", batch)
         
-
-        #interface.save_heterodata(batch)
         with h5_file as f: 
 
-        #     interface.save_heterodata(batch)
-        #     f['datasize/train'] = [0 for _ in range(len(batch))]
             f['planes'] = self.planes
             f["semantic_classes"] = ['MIP','HIP','shower','michel','diffuse']
 
-        # f.close()
-
+        f.close()
 
 # if __name__ == "__main__": 
 #     Load(test=True, batch_size=64).save_mini_batch()
 
 #     #H5DataModule.generate_samples("./test_data.h5")#, batch_size=16)
 #     H5Interface("./test_data.h5").load_heterodata("validation")
+
