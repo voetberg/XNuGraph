@@ -1,9 +1,8 @@
-from nugraph.explain_graph.gnn_explain import PlanarGNNExplain, GlobalGNNExplain
+from nugraph.explain_graph.gnn_explain import GlobalGNNExplain
 import argparse
 
 explainations = {
-    "GNNExplainer":PlanarGNNExplain, 
-    "NexusGNNExplainer": GlobalGNNExplain
+    "GNNExplainer":GlobalGNNExplain, 
 }
 
 def configure(): 

@@ -40,7 +40,6 @@ class HeteroExplainer(Explainer):
         except AttributeError: 
             explaination = self.hetero_call(x, edge_index, target=target, index=index, **kwargs)
 
-        graph = next(iter(graph))
         if 'edge_mask' in explaination: 
             graph['edge_mask'] = explaination['edge_mask']
         if "node_mask" in explaination: 
@@ -93,41 +92,19 @@ class HeteroGNNExplainer(GNNExplainer):
     def __init__(self, epochs: int = 100, lr: float = 0.01, plane='u', single_plane=True, **kwargs):
         super().__init__(epochs, lr, **kwargs)
         self.plane = plane
-        self.single_plane = single_plane
-        if not self.single_plane: 
-            assert type(plane) == list
 
     def forward(self, model, x, edge_index=None, node_index=None, **kwargs):
-        graph = next(iter(kwargs['graph']))
-
-        if self.single_plane: 
-            model.nexus_net.explain = False 
-
-            for decoder in model.decoders: 
-                decoder.explain = False 
+        graph = kwargs['graph']
 
         prediction = self._train(model, graph, node_index)
 
-        if self.single_plane: 
-            node_mask = self._post_process_mask(
-                self.node_mask,
-                self.hard_node_mask,
-                apply_sigmoid=True,
-            )
-
-            edge_mask = self._post_process_mask(
-                self.edge_mask,
-                self.hard_edge_mask,
-                apply_sigmoid=True,
-            )
-        else: 
-            node_mask = {key: self._post_process_mask(
+        node_mask = {key: self._post_process_mask(
                 self.node_mask[key],
                 self.hard_node_mask[key],
                 apply_sigmoid=True,
             ) for key in self.node_mask.keys()}
 
-            edge_mask = {key: self._post_process_mask(
+        edge_mask = {key: self._post_process_mask(
                 self.edge_mask[key],
                 self.hard_edge_mask[key],
                 apply_sigmoid=True,
@@ -135,10 +112,6 @@ class HeteroGNNExplainer(GNNExplainer):
 
         self._clean_model(model)
         explainer = Explanation(node_mask=node_mask, edge_mask=edge_mask)
-        print(explainer)
-
-        if self.single_plane: 
-            self.plane = [self.plane]
 
         for plane in self.plane: 
             explainer[plane] = {}
@@ -155,7 +128,6 @@ class HeteroGNNExplainer(GNNExplainer):
 
         (N, F), E = x_mask.size(), edge_index_mask.size(1)
         node_mask = Parameter(torch.randn(N, F) * 0.1)
-
         std = torch.nn.init.calculate_gain('relu') * math.sqrt(2.0 / (2 * N))
         edge_mask = Parameter(torch.randn(E) * std)
 
@@ -248,29 +220,24 @@ class HeteroGNNExplainer(GNNExplainer):
     def _train(self, model, graph, node_index=None, **kwargs):
         graph.requires_grad=True
 
-        if self.single_plane: 
-            parameters, self.node_mask, self.edge_mask = self.assign_planar_masks(graph, self.plane)
-        else: 
-            parameters = self.assign_nexus_masks(graph)
-
+        parameters = self.assign_nexus_masks(graph)
         optimizer = torch.optim.Adam(parameters, lr=self.lr)
  
         for i in range(self.epochs):
             optimizer.zero_grad()
 
-            stepped_graph = self.update_planar_graph(graph, self.plane) if self.single_plane else self.update_nexus_masks(graph)
+            stepped_graph = self.update_nexus_masks(graph)
 
             model.step(stepped_graph)
             
-            iterative_planes = [self.plane] if self.single_plane else self.plane
             y = torch.concat([
                 stepped_graph[plane]["y_semantic"] 
-                for plane in iterative_planes
+                for plane in self.plane
                 ]).to(torch.float)
             
             y_hat = torch.concat([
                 torch.argmax(stepped_graph[plane]['x_semantic'], dim=-1).to(torch.float)
-                for plane in iterative_planes
+                for plane in self.plane
             ]).to(torch.float)
 
             assert y.size() == y_hat.size(), print(f"{y.size()} vs {y_hat.size()}")## Personal check that things are not weirdly transposed
@@ -288,24 +255,18 @@ class HeteroGNNExplainer(GNNExplainer):
             # edges with gradient != 0 (without regularization applied).
 
             if i == 0 and self.node_mask is not None:
-                self.hard_node_mask = self.node_mask.grad != 0.0 if self.single_plane else {
+                self.hard_node_mask = {
                     key: self.node_mask[key].grad!=0  
                     for key in self.node_mask.keys()
                     }
                 
             if i == 0 and self.edge_mask is not None:
-                self.hard_edge_mask = self.edge_mask.grad != 0.0 if self.single_plane else {
+                self.hard_edge_mask = {
                     key: self.edge_mask[key].grad!=0 
                     for key in self.edge_mask.keys()
                     }
                 
         return stepped_graph
-
-
-    def get_planar_m(self): 
-        m_edge = self.edge_mask[self.hard_edge_mask].sigmoid()
-        m_node = self.node_mask[self.hard_node_mask].sigmoid()
-        return m_node, m_edge
 
     def get_nexus_m(self): 
         m_node = torch.concat([
@@ -321,7 +282,7 @@ class HeteroGNNExplainer(GNNExplainer):
     def _loss(self, y_hat, y): 
 
         loss = self._loss_multiclass_classification(y_hat, y)
-        m_node, m_edge = self.get_planar_m() if self.single_plane else self.get_nexus_m()
+        m_node, m_edge = self.get_nexus_m()
 
         edge_reduce = getattr(torch, self.coeffs['edge_reduction'])
         loss = loss + self.coeffs['edge_size'] * edge_reduce(m_edge)
