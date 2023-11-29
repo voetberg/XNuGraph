@@ -4,8 +4,7 @@ from torch_geometric.explain import ModelConfig
 from nugraph.explain_graph.edge_visuals import EdgeVisuals
 import matplotlib.pyplot as plt 
 
-import matplotlib.colors as colors
-import matplotlib.cm as cmx
+
 
 class GNNExplainFeatures(GlobalGNNExplain): 
     def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y']):

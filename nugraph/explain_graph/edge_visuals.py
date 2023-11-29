@@ -1,14 +1,13 @@
 import matplotlib.pyplot as plt
 import networkx as nx
 import plotly.graph_objects as go
-import plotly.express as px
 
-import torch_geometric as pyg
 import torch
 import pandas as pd 
 from nugraph.explain_graph.load import Load
 
-
+import matplotlib.colors as colors
+import matplotlib.cm as cmx
 
 class EdgeVisuals: 
 
