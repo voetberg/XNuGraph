@@ -1,8 +1,10 @@
 from nugraph.explain_graph.gnn_explain import GlobalGNNExplain
+from nugraph.explain_graph.gnn_explain_features import GNNExplainFeatures
 import argparse
 
 explainations = {
     "GNNExplainer":GlobalGNNExplain, 
+    "GNNFeatures": GNNExplainFeatures
 }
 
 def configure(): 
@@ -11,7 +13,7 @@ def configure():
     parser.add_argument("--algorithm", '-a', type=str, 
                         choices=list(explainations.keys()), 
                         help='Name of the explaination algorithm', default="GNNExplainer")
-    parser.add_argument("--outfile", '-o', type=str, help='Full path to output file', default="./test/")
+    parser.add_argument("--outfile", '-o', type=str, help='Full path to output file', default="./")
     parser.add_argument('--data_path', type=str,
                           default='/raid/uboone/CHEP2023/CHEP2023.gnn.h5',
                           help='Location of input data file')
@@ -22,7 +24,7 @@ def configure():
 
 def run_explaination(checkpoint, algorithm, outfile, data_path, batch_size, test): 
     if test: 
-        outfile = f"{outfile.rstrip('/')}/test/"
+        outfile = f"{outfile.rstrip('/')}/explaination_test/"
 
     explain = explainations[algorithm](
         data_path=data_path, 

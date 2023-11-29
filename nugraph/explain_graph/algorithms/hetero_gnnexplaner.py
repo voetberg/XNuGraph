@@ -1,4 +1,5 @@
 from typing import Any, Dict, Optional, Union
+from torch_geometric.explain.config import ThresholdConfig, ThresholdType
 import copy
 
 import math 
@@ -7,18 +8,15 @@ from torch import Tensor
 from torch.nn.parameter import Parameter
 
 from torch_geometric.explain import Explainer, Explanation, ExplainerAlgorithm, GNNExplainer, HeteroExplanation 
-from torch_geometric.explain.algorithm.utils import set_masks
 import pandas as pd 
-from torch_geometric.data import HeteroData, DataLoader, batch
-from torch_geometric.typing import EdgeType, NodeType
+from torch_geometric.data import HeteroData
+from torch_geometric.explain.config import MaskType
 from nugraph.explain_graph.load import Load
-from nugraph import util
-import pytorch_lightning as pl
 
 
 
 class HeteroExplainer(Explainer): 
-    def __init__(self, model: torch.nn.Module, algorithm: ExplainerAlgorithm, explanation_type, edge_mask_type, model_config, node_mask_type = None, threshold_config = None):
+    def __init__(self, model: torch.nn.Module, algorithm: ExplainerAlgorithm, explanation_type, model_config,edge_mask_type=None, node_mask_type = None, threshold_config = None):
         super().__init__(model, algorithm, explanation_type, model_config, node_mask_type, edge_mask_type, threshold_config)
 
     def get_prediction(self, *args, **kwargs) -> Tensor:
@@ -35,10 +33,13 @@ class HeteroExplainer(Explainer):
     def __call__(self, graph) -> Explanation | HeteroExplanation:
         x, edge_index, target, index = None, None, None, None
         kwargs={"graph":graph}
+
         try: 
             explaination =  super().__call__(x, edge_index, target=target, index=index, **kwargs)
         except AttributeError: 
             explaination = self.hetero_call(x, edge_index, target=target, index=index, **kwargs)
+
+        ## Checking for the types to return for explaination
 
         if 'edge_mask' in explaination: 
             graph['edge_mask'] = explaination['edge_mask']
@@ -89,7 +90,7 @@ class HeteroExplainer(Explainer):
 
 
 class HeteroGNNExplainer(GNNExplainer): 
-    def __init__(self, epochs: int = 100, lr: float = 0.01, plane='u', single_plane=True, **kwargs):
+    def __init__(self, epochs: int = 100, lr: float = 0.01, plane='u', **kwargs):
         super().__init__(epochs, lr, **kwargs)
         self.plane = plane
 
@@ -101,13 +102,11 @@ class HeteroGNNExplainer(GNNExplainer):
         node_mask = {key: self._post_process_mask(
                 self.node_mask[key],
                 self.hard_node_mask[key],
-                apply_sigmoid=True,
             ) for key in self.node_mask.keys()}
 
         edge_mask = {key: self._post_process_mask(
                 self.edge_mask[key],
                 self.hard_edge_mask[key],
-                apply_sigmoid=True,
             ) for key in self.edge_mask.keys()}
 
         self._clean_model(model)
@@ -123,11 +122,18 @@ class HeteroGNNExplainer(GNNExplainer):
         return explainer
     
     def assign_planar_masks(self, graph, plane): 
+        node_mask_type = self.explainer_config.node_mask_type
+
         x_mask = graph[plane]['x']
         edge_index_mask = graph[plane, 'plane', plane]['edge_index'].to(torch.float)
 
-        (N, F), E = x_mask.size(), edge_index_mask.size(1)
-        node_mask = Parameter(torch.randn(N, F) * 0.1)
+        (N, F), E = x_mask.size(), edge_index_mask.size(1) 
+        node_mask = None 
+
+        if node_mask_type == MaskType.object:
+            node_mask = Parameter(torch.randn(N, 1) * 0.1)
+        elif node_mask_type == MaskType.attributes:
+            node_mask = Parameter(torch.randn(N, F) * 0.1)
         std = torch.nn.init.calculate_gain('relu') * math.sqrt(2.0 / (2 * N))
         edge_mask = Parameter(torch.randn(E) * std)
 
@@ -168,7 +174,6 @@ class HeteroGNNExplainer(GNNExplainer):
         self.hard_edge_mask = {}
         all_parameters = []
 
-        ## planar masks 
         for plane in self.plane: 
             ## planar masks 
             parameters, node_mask, edge_mask = self.assign_planar_masks(graph, plane)

@@ -8,8 +8,6 @@ import torch
 import pandas as pd 
 from nugraph.explain_graph.load import Load
 
-import matplotlib.colors as colors
-import matplotlib.cm as cmx
 
 
 class EdgeVisuals: 
@@ -107,9 +105,12 @@ class EdgeVisuals:
         position = {node: graph[plane]['pos'][node].tolist() for node in nodes}
 
         nx.set_node_attributes(subgraph_nx, position, 'pos')
-
-        true_labels = {node: self.semantic_classes[torch.argmax(graph[plane]['sem_label'][node])] for node in nodes}
-        pred_labels = {node: self.semantic_classes[torch.argmax(graph[plane]['pred_label'][node])] for node in nodes}
+        try: 
+            true_labels = {node: self.semantic_classes[torch.argmax(graph[plane]['sem_label'][node])] for node in nodes} 
+            pred_labels = {node: self.semantic_classes[torch.argmax(graph[plane]['pred_label'][node])] for node in nodes}
+        except KeyError: 
+            true_labels = None
+            pred_labels = None 
 
         return subgraph_nx, true_labels, pred_labels
     
