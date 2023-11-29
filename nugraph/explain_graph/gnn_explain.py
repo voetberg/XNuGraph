@@ -17,15 +17,15 @@ class GlobalGNNExplain(ExplainLocal):
             mode='multiclass_classification',
             task_level='node', 
             return_type="raw")
+        
         self.explainer = HeteroExplainer(
             model=self.model, 
             algorithm=HeteroGNNExplainer(epochs=100, single_plane=False, plane=self.planes), 
             explanation_type='model', 
             model_config=model_config,
-            node_mask_type="attributes",
+            node_mask_type="object",
             edge_mask_type="object",
         )
-
 
     def filter_edges(self, edges, filter): 
         filter = (filter.sigmoid() >= 0.5)
@@ -41,28 +41,25 @@ class GlobalGNNExplain(ExplainLocal):
             # Apply the mask to the nodes
                 # Remove the nodes from the edge indices if they are not in the nodes post-mask
             
-            node_mask = explaination['node_mask'][plane].sigmoid()
+            node_mask_value = explaination['node_mask'][plane].sigmoid().ravel()
+
+            topk_nodes = torch.topk(node_mask_value, k=int(len(node_mask_value)/3), dim=0)
+
 
             edge_weights = explaination['edge_mask'][plane].sigmoid()
-            nodes = (explaination[plane]['x']*node_mask.to(float))[:,0].flatten().nonzero()
-            edges = explaination[(plane, "plane", plane)]['edge_index']
+            tokp_edges = torch.topk(edge_weights.ravel(), k=int(len(edge_weights.ravel())/3), dim=0)
 
-            # Confusing conditional 
-            # Only include an edge if both of the nodes included in the edge is not in node mask
-            edge_mask = torch.logical_and(torch.isin(edges[0], nodes), torch.isin(edges[1], nodes))
-            edge_weight_mask = edge_weights.sigmoid()
-            edge_weights = edge_weight_mask*edge_mask.to(int)
+            nodes = explaination[plane]['x'][topk_nodes.indices]
+            edges = explaination[(plane, "plane", plane)]['edge_index'][:,tokp_edges.indices]
 
-            edges = self.filter_edges(edges, edge_mask)
-            edge_weights = self.filter_edges(edge_weights.expand(2,edge_mask.size(0)), edge_mask)[0]
             assert edges.size(0)==2
 
             explination_graph[(plane, "plane", plane)]['edge_index'] = edges
             explination_graph[(plane, "plane", plane)]['weight'] = edge_weights
 
             explination_graph[plane]['node_mask'] = explaination['node_mask'][plane]
-            explination_graph[plane]['pos'] = explaination[plane]['pos']  
-            explination_graph[plane]['x'] = explaination[plane]['x']
+            explination_graph[plane]['pos'] = explaination[plane]['pos'] 
+            explination_graph[plane]['x'] = nodes
 
             # TODO: Swap out for the actual labels
             explination_graph[plane]['pred_label'] = explaination[plane]['y_semantic']
@@ -74,8 +71,6 @@ class GlobalGNNExplain(ExplainLocal):
         explination_graph['nexus'] = {}
         for plane in self.planes: 
             ""
-
-
 
         return explination_graph
     
