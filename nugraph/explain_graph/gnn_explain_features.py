@@ -1,7 +1,7 @@
 from nugraph.explain_graph.gnn_explain import GlobalGNNExplain
 from nugraph.explain_graph.algorithms.hetero_gnnexplaner import HeteroGNNExplainer, HeteroExplainer
 from torch_geometric.explain import ModelConfig
-from nugraph.explain_graph.edge_visuals import EdgeVisuals
+from nugraph.explain_graph.edge_visuals import EdgeVisuals, InteractiveEdgeVisuals, make_subgraph_kx
 import matplotlib.pyplot as plt 
 
 
@@ -26,19 +26,27 @@ class GNNExplainFeatures(GlobalGNNExplain):
 
     def _importance_plot(self, subgraph, file_name): 
         plot_engine = EdgeVisuals()
-        figure, subplots = plt.subplots(2, 3, figsize=(16*3, 16*2))
+        _, subplots = plt.subplots(2, 3, figsize=(16*3, 16*2))
+        subgraph = subgraph['graph']
         for index, plane in enumerate(self.planes): 
-            subgraph_kx, _, _ = plot_engine.make_subgraph(subgraph, plane=plane)
+            subgraph_kx = make_subgraph_kx(subgraph, plane=plane)
             node_list = subgraph_kx.nodes 
-            subplot = subplots[0, index]
-            subplot.set_title(plane)
+            subplots[0, index].set_title(plane)
 
-            plot_engine.plot_graph(subgraph, subgraph_kx, plane, node_list, subplot)
+            plot_engine.plot_graph(subgraph, subgraph_kx, plane, node_list, subplots[0, index])
 
             importance = subgraph['node_mask'][plane].mean(axis=0)
             subplots[1, index].bar(x=range(len(importance)), height=importance)
+            subgraph[plane]['node_mask'] = subgraph['node_mask'][plane]
+            
+            # Produce interactive plots at the same time. 
+            InteractiveEdgeVisuals(
+                plane=plane, 
+                feature_importance=True
+            ).plot(subgraph, outdir=self.out_path, file_name=f"interactive_{plane}")
 
-        plt.savefig(f"{self.out_path.rstrip('/')}/{file_name}.png")
+        plt.savefig(f"{self.out_path.rstrip('/')}/{file_name}_mean.png")
+
 
     def get_explaination_subgraph(self, explaination):
         return explaination
@@ -50,7 +58,7 @@ class GNNExplainFeatures(GlobalGNNExplain):
 
         if not explaination: 
 
-            for index, batch in enumerate(self.data):
+            for batch in self.data:
                 explainations = self.explain(batch, raw=True)
                 subgraph = self.get_explaination_subgraph(explainations)
                  

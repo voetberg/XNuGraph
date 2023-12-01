@@ -5,8 +5,7 @@ from torch_geometric.explain import Explainer, ModelConfig
 from torch_geometric.data import HeteroData
 from nugraph.explain_graph.algorithms.hetero_gnnexplaner import HeteroGNNExplainer, HeteroExplainer
 
-import torch
-
+from nugraph.explain_graph.masking_utils import get_masked_graph
 
 class GlobalGNNExplain(ExplainLocal): 
     def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y']):
@@ -33,46 +32,11 @@ class GlobalGNNExplain(ExplainLocal):
         return edges
 
     def get_explaination_subgraph(self, explaination):
-        explination_graph = HeteroData()
-        for plane in self.planes: 
-
-            # Apply the mask on each plane: 
-            # Rules: Edges mask applied to both 
-            # Apply the mask to the nodes
-                # Remove the nodes from the edge indices if they are not in the nodes post-mask
-            
-            node_mask_value = explaination['node_mask'][plane].sigmoid().ravel()
-
-            topk_nodes = torch.topk(node_mask_value, k=int(len(node_mask_value)/3), dim=0)
-
-
-            edge_weights = explaination['edge_mask'][plane].sigmoid()
-            tokp_edges = torch.topk(edge_weights.ravel(), k=int(len(edge_weights.ravel())/3), dim=0)
-
-            nodes = explaination[plane]['x'][topk_nodes.indices]
-            edges = explaination[(plane, "plane", plane)]['edge_index'][:,tokp_edges.indices]
-
-            assert edges.size(0)==2
-
-            explination_graph[(plane, "plane", plane)]['edge_index'] = edges
-            explination_graph[(plane, "plane", plane)]['weight'] = edge_weights
-
-            explination_graph[plane]['node_mask'] = explaination['node_mask'][plane]
-            explination_graph[plane]['pos'] = explaination[plane]['pos'] 
-            explination_graph[plane]['x'] = nodes
-
-            # TODO: Swap out for the actual labels
-            explination_graph[plane]['pred_label'] = explaination[plane]['y_semantic']
-            explination_graph[plane]['sem_label'] = explaination[plane]['y_semantic']
-
-
-        # Make the nexus graph: 
-        # get the nodes that have a connection to the nexus - use their weight and pos to show rep in nexus plane
-        explination_graph['nexus'] = {}
-        for plane in self.planes: 
-            ""
-
-        return explination_graph
+        node_mask = explaination['node_mask']
+        edge_mask = explaination['edge_mask']
+        return get_masked_graph(
+            explaination['graph'], node_mask, edge_mask, planes=self.planes
+        )
     
     def visualize(self, explaination=None, file_name="explaination_graph", interactive=False):
         append_explainations = True
@@ -101,6 +65,8 @@ class GlobalGNNExplain(ExplainLocal):
     def explain(self, data, node_index=[8], raw:bool=True):
         graph = self.process_graph(next(iter(data))) 
         explaination = self.explainer(graph=graph)
+        # metrics = self.calculate_metrics(explaination)
+        # self.metrics[str(len(self.metrics))] = metrics 
         if not raw: 
             explaination = self.get_explaination_subgraph(explaination)
 

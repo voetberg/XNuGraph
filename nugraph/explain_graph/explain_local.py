@@ -8,6 +8,7 @@ import torch
 from datetime import datetime 
 
 from torch_geometric.explain import Explanation, metric
+from nugraph.explain_graph.metrics import fidelity, unfaithfulness
 from torch_geometric.data import Batch, HeteroData
 from torch_geometric.utils import unbatch
 from functools import partial
@@ -27,6 +28,7 @@ class ExplainLocal:
         self.load = Load(data_path=data_path, checkpoint_path=checkpoint_path, batch_size=batch_size, test=test)
         self.data = self.load.data
         self.model = self.load.model
+        self.metrics = {}
 
         self.explainations = Explanation()
         self.out_path = out_path.rstrip('/')
@@ -38,21 +40,6 @@ class ExplainLocal:
         """
         Remove double connections from point to point - the graph is bidirectional and should be treated as such
         """ 
-        # def remove_double_connections(edge): 
-        #     print(edge)
-        #     edge_tuples = [{node1, node2} for node1, node2 in zip(edge[0], edge[1])] 
-        #     edge_tuple_counts = {edge_tuples.index(key) for key in edge_tuples}
-        #     print(edge_tuples)
-        #     print(len(edge[0]))
-        #     print(len(edge_tuple_counts))
-        #     return edge 
-            
-        # for plane in self.model.planes: 
-        #     plane_edges = graph[plane, 'plane', plane]['edge_index']
-        #     nexus_edges = graph[plane, 'nexus', 'sp']['edge_index']
-        #     graph[plane, 'plane', plane]['edge_index'] = remove_double_connections(plane_edges)
-        #     graph[plane, 'nexus', 'sp']['edge_index'] = remove_double_connections(nexus_edges)
-
         return graph 
 
     def unpack(self, data): 
@@ -88,10 +75,16 @@ class ExplainLocal:
         """
         raise NotImplemented 
     
-    def metrics(self, explainations): 
-        fidelity_positive, fidelity_negative = metric.fidelity(self.explainer, explainations)
-        characterization = metric.characterization_score(fidelity_positive, fidelity_negative)
-        unfaithfulness = metric.unfaithfulness(self.explainer, explainations)
+    def unfaithfulness(explanation): 
+        return unfaithfulness
+
+    def calculate_metrics(self, explainations): 
+        fidelity_positive, fidelity_negative = fidelity(self.explainer, explainations)
+        characterization = {plane: 
+            metric.characterization_score(fidelity_positive[plane], fidelity_negative[plane])
+            for plane in self.model.planes
+        } 
+        unfaithfulness = {} # metric.unfaithfulness(self.explainer, explainations)
 
         return {
             "fidelity+": fidelity_positive, 
