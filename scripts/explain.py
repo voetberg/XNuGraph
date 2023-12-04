@@ -9,7 +9,7 @@ explainations = {
 
 def configure(): 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--checkpoint", '-c', type=str, help='Trained model checkpoint to test')
+    parser.add_argument("--checkpoint", '-c', type=str, help='Trained model checkpoint to test', default="./paper.ckpt")
     parser.add_argument("--algorithm", '-a', type=str, 
                         choices=list(explainations.keys()), 
                         help='Name of the explaination algorithm', default="GNNExplainer")

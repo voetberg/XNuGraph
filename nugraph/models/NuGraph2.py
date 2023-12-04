@@ -105,6 +105,7 @@ class NuGraph2(LightningModule):
                 edge_index_nexus: dict[str, Tensor],
                 nexus: Tensor,
                 batch: dict[str, Tensor]):
+        x = {plane: x[plane][:,:4] for plane in self.planes}
         m = self.encoder(x)
         for _ in range(self.num_iters):
             # shortcut connect features

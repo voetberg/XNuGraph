@@ -39,8 +39,8 @@ def make_subgraph_kx(graph, plane, semantic_classes=None):
         return subgraph_nx
     
 def extract_edge_weights(graph, plane, return_value=False, cmap='viridis'): 
-    if "weight" in graph[(plane, "plane", plane)].keys(): 
-        weights = graph[(plane, "plane", plane)]['weight']
+    if "edge_mask" in graph.keys: 
+        weights = graph["edge_mask"][plane]
         weights = (weights - weights.min())/(weights.max() - weights.min())
 
         cNorm  = colors.Normalize(vmin=0, vmax=weights.max())
