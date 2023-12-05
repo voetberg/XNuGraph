@@ -62,7 +62,7 @@ def extract_node_weights(graph, plane, node_field='node_mask', scale=True):
             node_size = node_size.ravel().tolist()
 
     else: 
-        node_size = [5 for _ in range(len(graph[plane]['x']))]
+        node_size = [2 for _ in range(len(graph[plane]['x']))]
 
     return node_size
 
@@ -77,32 +77,6 @@ class EdgeVisuals:
         self.planes = planes
 
         self.cmap = weight_colormap
-
-    def extract_weights(self, graph, plane, return_value=False): 
-        if "weight" in graph[(plane, "plane", plane)].keys(): 
-            weights = graph[(plane, "plane", plane)]['weight']
-
-            weights = (weights - weights.min())/(weights.max() - weights.min())
-            cNorm  = colors.Normalize(vmin=0, vmax=weights.max())
-            color_map = cmx.ScalarMappable(norm=cNorm, cmap=plt.get_cmap(self.cmap))
-            weight_colors = [color_map.to_rgba(weight) for weight in weights]
-        else: 
-            weights = [1 for _ in range(len(graph[(plane, "plane", plane)]))]
-            weight_colors = 'grey'
-
-        if "node_mask" in graph[plane].keys(): 
-            node_size = graph[plane]["node_mask"]
-            node_size = (node_size - node_size.min())/(node_size.max() - node_size.min())*20
-            node_size = node_size.ravel().tolist()
-
-        else: 
-            node_size = [5 for _ in range(len(graph[plane]['x']))]
-
-        if return_value: 
-            return weights
-        
-        else: 
-            return weight_colors, node_size
     
     def plot_graph(self, graph, subgraph, plane, node_list, axes): 
         nodes = subgraph.nodes
@@ -121,7 +95,8 @@ class EdgeVisuals:
               nodelist=node_list, 
               edgelist=edge_list, 
               width=5, 
-              node_color='red',
+              node_color='black',
+              node_size=3,
               edge_color=weight_colors,
               ax=axes) 
         return drawn_plot
@@ -137,7 +112,7 @@ class EdgeVisuals:
         return graph 
     
 
-    def plot(self, data_index=0, graph=None, incorrect_items=False, semantic_class=None, not_in=False, title="", outdir=".", file_name="prediction_plot.png"): 
+    def plot(self, data_index=0, graph=None, title="", outdir=".", file_name="prediction_plot.png"): 
         """_summary_
 
         Args:
@@ -159,16 +134,6 @@ class EdgeVisuals:
 
             subgraph = make_subgraph_kx(graph, plane=plane)
             node_list = subgraph.nodes 
-            # if incorrect_items: 
-            #     node_list = [node for node in node_list if predictions[node]!=labels[node]]
-
-            # if semantic_class is not None: 
-            #     assert semantic_class in self.semantic_classes
-            #     if not_in: 
-            #         node_list = [node for node in node_list if labels[node]!=semantic_class]
-            #     else: 
-            #         node_list = [node for node in node_list if labels[node]==semantic_class]
-
 
             self.plot_graph(graph, subgraph, plane, node_list, subplot)
             subplot.set_title(plane)

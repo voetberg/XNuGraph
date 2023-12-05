@@ -101,6 +101,7 @@ class HeteroGNNExplainer(GNNExplainer):
     def __init__(self, epochs: int = 100, lr: float = 0.01, plane='u', **kwargs):
         super().__init__(epochs, lr, **kwargs)
         self.plane = plane
+        self.loss_history = []
 
     def forward(self, model, x, edge_index=None, node_index=None, **kwargs):
         graph = kwargs['graph']
@@ -167,25 +168,6 @@ class HeteroGNNExplainer(GNNExplainer):
 
         return update_graph
 
-    def get_masked_subgraph(self, graph): 
-          
-        for plane in self.planes: 
-
-            node_mask_value = self.node_mask[plane].sigmoid().ravel()
-            topk_nodes = torch.topk(node_mask_value, k=int(len(node_mask_value)/3), dim=0)
-
-            edge_weights = self.edge_mask[plane].sigmoid()
-            tokp_edges = torch.topk(edge_weights.ravel(), k=int(len(edge_weights.ravel())/3), dim=0)
-
-            graph[(plane, "plane", plane)]['edge_index'] = graph[(plane, "plane", plane)]['edge_index'][:,tokp_edges.indices]
-            graph[(plane, "plane", plane)]['x'] = graph[plane]['x'][topk_nodes.indices]
-        return graph 
-    
-    def filter_edges(self, edges, filter): 
-        filter = (filter.sigmoid() >= 0.5)
-        edges = edges[:,filter]
-        return edges.to(int)
-
     def assign_nexus_masks(self, graph): 
         # Soft Masks
         self.node_mask = {}
@@ -220,29 +202,6 @@ class HeteroGNNExplainer(GNNExplainer):
 
         return all_parameters
     
-    def update_nexus_masks(self, graph): 
-        update_graph = copy.copy(graph)
-
-        for plane in self.plane: 
-            plane_node_mask = self.node_mask[plane]
-            plane_edge_planar_mask = self.edge_mask[plane]
-            plane_edge_nexus_mask = self.edge_mask[f"{plane}_nexus"]
-
-            #Update the node mask 
-            x = graph[plane]['x']
-            h = x if plane_node_mask is None else x * plane_node_mask.sigmoid()
-            update_graph[plane]['x'] = h 
-
-            # Update the edge masks 
-            edges =  graph[plane, 'plane', plane]['edge_index'].to(torch.float)            
-            update_graph[plane, 'plane', plane]['edge_index'] = self.filter_edges(edges, plane_edge_planar_mask)
-
-            # Update the nexus edge masks 
-            edges =  graph[plane, 'nexus', 'sp']['edge_index'].to(torch.float)
-            update_graph[plane, 'nexus', 'sp']['edge_index'] = self.filter_edges(edges, plane_edge_nexus_mask)
-
-        return update_graph
-    
 
     def _train(self, model, graph, node_index=None, **kwargs):
         graph.requires_grad=True
@@ -253,7 +212,7 @@ class HeteroGNNExplainer(GNNExplainer):
         for i in range(self.epochs):
             optimizer.zero_grad()
 
-            stepped_graph = self.update_nexus_masks(graph)
+            stepped_graph = get_masked_graph(graph, node_mask=self.node_mask, edge_mask=self.edge_mask)
 
             model.step(stepped_graph)
             
@@ -274,6 +233,8 @@ class HeteroGNNExplainer(GNNExplainer):
                 y_hat = y_hat[node_index]
             
             loss = self._loss(y_hat, y)
+            
+            self.loss_history.append(loss.item())
             loss.backward()
             optimizer.step()
 
@@ -322,5 +283,16 @@ class HeteroGNNExplainer(GNNExplainer):
         ent = -m_node * torch.log(m_node + self.coeffs['EPS']) - (
             1 - m_node) * torch.log(1 - m_node + self.coeffs['EPS'])
         loss = loss + self.coeffs['node_feat_ent'] * ent.mean()
-
+        print(loss)
         return loss
+
+    def plot_loss(self, file_name):
+        import matplotlib.pyplot as plt 
+        plt.close('all')
+
+        plt.plot(range(len(self.loss_history)), self.loss_history)
+        plt.xlabel("Iteration") 
+        plt.ylabel("Entropy Loss")
+
+        plt.savefig(file_name)
+        plt.close("all")

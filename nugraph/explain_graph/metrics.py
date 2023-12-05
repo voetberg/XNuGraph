@@ -1,7 +1,25 @@
 import copy 
+import torch 
 
-def unfaithfulness(explanation): 
-        return unfaithfulness
+def unfaithfulness(explainer, explanation): 
+        
+    node_mask = explanation.get('node_mask')
+    edge_mask = explanation.get('edge_mask')
+    x, edge_index = explanation.x, explanation.edge_index
+    kwargs = {key: explanation[key] for key in explanation._model_args}
+
+    y = explainer.get_prediction(x, edge_index, **kwargs)['x_semantic']
+
+    y_hat = explainer.get_masked_prediction(x, edge_index, node_mask,
+                                            edge_mask, **kwargs)['x_semantic']
+
+    kl_div = {
+        plane: torch.nn.functional.kl_div(
+            torch.nn.functional.softmax(y[plane], dim=-1), 
+            torch.nn.functional.softmax(y_hat[plane], dim=-1), reduction='batchmean') 
+            for plane in node_mask.keys()
+    }
+    return {plane: 1 - float(torch.exp(-kl_div[plane])) for plane in node_mask.keys()}
 
 def fidelity(explainer, explaionation): 
     node_mask = explaionation.get('node_mask')
@@ -34,7 +52,7 @@ def fidelity(explainer, explaionation):
     pos_fidelity = {}
     neg_fidelity = {}
     for plane in node_mask.keys(): 
-        pos_fidelity[plane] = 1. - (complement_y_hat[plane] == y[plane]).float().mean()
-        neg_fidelity[plane] = 1. - (explain_y_hat[plane] == y[plane]).float().mean()
+        pos_fidelity[plane] = 1. - (complement_y_hat[plane] == y[plane]).float().mean().item()
+        neg_fidelity[plane] = 1. - (explain_y_hat[plane] == y[plane]).float().mean().item()
 
     return pos_fidelity, neg_fidelity

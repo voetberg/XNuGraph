@@ -1,17 +1,16 @@
 import tqdm 
 import os 
-from nugraph import data, models
+import json 
 from nugraph.explain_graph.load import Load
 import h5py
+from pynuml import io
 
 import torch 
 from datetime import datetime 
 
-from torch_geometric.explain import Explanation, metric
-from nugraph.explain_graph.metrics import fidelity, unfaithfulness
-from torch_geometric.data import Batch, HeteroData
-from torch_geometric.utils import unbatch
-from functools import partial
+from torch_geometric.explain import metric
+from nugraph.explain_graph import metrics
+
 
 class ExplainLocal:
     def __init__(self, data_path:str, out_path:str = "explainations/",checkpoint_path:str=None, batch_size:int=16, test:bool=False):
@@ -30,7 +29,6 @@ class ExplainLocal:
         self.model = self.load.model
         self.metrics = {}
 
-        self.explainations = Explanation()
         self.out_path = out_path.rstrip('/')
         if not os.path.exists(self.out_path): 
             os.makedirs(self.out_path)
@@ -74,17 +72,14 @@ class ExplainLocal:
         Produce a visualization of the explaination
         """
         raise NotImplemented 
-    
-    def unfaithfulness(explanation): 
-        return unfaithfulness
 
     def calculate_metrics(self, explainations): 
-        fidelity_positive, fidelity_negative = fidelity(self.explainer, explainations)
+        fidelity_positive, fidelity_negative = metrics.fidelity(self.explainer, explainations)
         characterization = {plane: 
             metric.characterization_score(fidelity_positive[plane], fidelity_negative[plane])
             for plane in self.model.planes
         } 
-        unfaithfulness = {} # metric.unfaithfulness(self.explainer, explainations)
+        unfaithfulness = metrics.unfaithfulness(self.explainer, explainations)
 
         return {
             "fidelity+": fidelity_positive, 
@@ -100,20 +95,15 @@ class ExplainLocal:
         Args:
             file_name (str, optional): Name of file. If not supplied, filename is results_$timestamp. Defaults to None.
         """
-        assert len(self.explainations)!=0, "No results found, please run explainations.inference before saving"
 
         if not os.path.exists(self.out_path): 
             os.makedirs(self.out_path)
 
         if file_name is None: 
-            file_name = f"results_{datetime.now().timestamp()}"
+            file_name = datetime.now().timestamp()
 
-        save_file = f"{self.out_path}/{file_name}.h5"
-        save_results = h5py.File(save_file, 'w')
-        for header, data in self.explainations.to_dict().items():
-            save_results.create_dataset(header, data=data)
-
-        save_results.close()
+        self.explainer.algorithm.plot_loss(f"{self.out_path}/exp_loss_{file_name}.png")
+        json.dump(self.metrics, open(f"{self.out_path}/metrics_{file_name}.json", 'w'))
 
     def __call__(self, *args, **kwds):
         self.inference()
