@@ -11,8 +11,9 @@ from torch_geometric.explain import Explainer, Explanation, ExplainerAlgorithm, 
 import pandas as pd 
 from torch_geometric.data import HeteroData
 from torch_geometric.explain.config import MaskType
+from torch_geometric.typing import EdgeType, NodeType
 from nugraph.explain_graph.load import Load
-
+from nugraph.explain_graph.masking_utils import get_masked_graph
 
 
 class HeteroExplainer(Explainer): 
@@ -27,8 +28,14 @@ class HeteroExplainer(Explainer):
         preds = prediction['x_semantic']
         target = {}
         for plane in preds.keys(): 
-            target[plane] = pd.Categorical(prediction["x_semantic"][plane][0].detach()).codes
+            target[plane] =torch.argmax(prediction["x_semantic"][plane].detach(), dim=-1)
         return target
+
+    def get_masked_prediction(self, x: Tensor | Dict[NodeType, Tensor], edge_index: Tensor | Dict[EdgeType, Tensor], node_mask: Tensor | Dict[NodeType, Tensor] | None = None, edge_mask: Tensor | Dict[EdgeType, Tensor] | None = None, **kwargs) -> Tensor:
+        masked_graph = kwargs['graph']
+        masked_graph = get_masked_graph(masked_graph, node_mask, edge_mask)
+        out = self.get_prediction(graph=masked_graph)
+        return out
 
     def __call__(self, graph) -> Explanation | HeteroExplanation:
         x, edge_index, target, index = None, None, None, None
@@ -45,7 +52,7 @@ class HeteroExplainer(Explainer):
             graph['edge_mask'] = explaination['edge_mask']
         if "node_mask" in explaination: 
             graph['node_mask'] = explaination['node_mask']
-        return graph
+        return explaination
 
     def hetero_call(self, x, edge_index, target, index, **kwargs): 
         prediction: Optional[Tensor] = None
@@ -72,6 +79,7 @@ class HeteroExplainer(Explainer):
 
         # Add explainer objectives to the `Explanation` object:
         explanation._model_config = self.model_config
+        explanation._model_args = kwargs
         explanation.prediction = prediction
         explanation.target = target
         explanation.index = index
@@ -85,7 +93,7 @@ class HeteroExplainer(Explainer):
                 explanation.set_value_dict(key, arg)
             else:
                 explanation[key] = arg
-
+        
         return explanation.threshold(self.threshold_config)
 
 
@@ -93,6 +101,7 @@ class HeteroGNNExplainer(GNNExplainer):
     def __init__(self, epochs: int = 100, lr: float = 0.01, plane='u', **kwargs):
         super().__init__(epochs, lr, **kwargs)
         self.plane = plane
+        self.loss_history = []
 
     def forward(self, model, x, edge_index=None, node_index=None, **kwargs):
         graph = kwargs['graph']
@@ -159,11 +168,6 @@ class HeteroGNNExplainer(GNNExplainer):
 
         return update_graph
 
-    def filter_edges(self, edges, filter): 
-        filter = (filter.sigmoid() >= 0.5)
-        edges = edges[:,filter]
-        return edges.to(int)
-
     def assign_nexus_masks(self, graph): 
         # Soft Masks
         self.node_mask = {}
@@ -198,29 +202,6 @@ class HeteroGNNExplainer(GNNExplainer):
 
         return all_parameters
     
-    def update_nexus_masks(self, graph): 
-        update_graph = copy.copy(graph)
-
-        for plane in self.plane: 
-            plane_node_mask = self.node_mask[plane]
-            plane_edge_planar_mask = self.edge_mask[plane]
-            plane_edge_nexus_mask = self.edge_mask[f"{plane}_nexus"]
-
-            #Update the node mask 
-            x = graph[plane]['x']
-            h = x if plane_node_mask is None else x * plane_node_mask.sigmoid()
-            update_graph[plane]['x'] = h 
-
-            # Update the edge masks 
-            edges =  graph[plane, 'plane', plane]['edge_index'].to(torch.float)            
-            update_graph[plane, 'plane', plane]['edge_index'] = self.filter_edges(edges, plane_edge_planar_mask)
-
-            # Update the nexus edge masks 
-            edges =  graph[plane, 'nexus', 'sp']['edge_index'].to(torch.float)
-            update_graph[plane, 'nexus', 'sp']['edge_index'] = self.filter_edges(edges, plane_edge_nexus_mask)
-
-        return update_graph
-    
 
     def _train(self, model, graph, node_index=None, **kwargs):
         graph.requires_grad=True
@@ -231,7 +212,7 @@ class HeteroGNNExplainer(GNNExplainer):
         for i in range(self.epochs):
             optimizer.zero_grad()
 
-            stepped_graph = self.update_nexus_masks(graph)
+            stepped_graph = get_masked_graph(graph, node_mask=self.node_mask, edge_mask=self.edge_mask)
 
             model.step(stepped_graph)
             
@@ -252,6 +233,8 @@ class HeteroGNNExplainer(GNNExplainer):
                 y_hat = y_hat[node_index]
             
             loss = self._loss(y_hat, y)
+            
+            self.loss_history.append(loss.item())
             loss.backward()
             optimizer.step()
 
@@ -300,5 +283,16 @@ class HeteroGNNExplainer(GNNExplainer):
         ent = -m_node * torch.log(m_node + self.coeffs['EPS']) - (
             1 - m_node) * torch.log(1 - m_node + self.coeffs['EPS'])
         loss = loss + self.coeffs['node_feat_ent'] * ent.mean()
-
+        print(loss)
         return loss
+
+    def plot_loss(self, file_name):
+        import matplotlib.pyplot as plt 
+        plt.close('all')
+
+        plt.plot(range(len(self.loss_history)), self.loss_history)
+        plt.xlabel("Iteration") 
+        plt.ylabel("Entropy Loss")
+
+        plt.savefig(file_name)
+        plt.close("all")
