@@ -22,3 +22,8 @@ class LinearDecoder:
         return {
             plane: torch.argmax(torch.nn.functional.softmax(x[plane]), dim=-1) for plane in x.keys()
         }
+    
+    def probablity(self, x):
+        return {
+            plane: torch.nn.functional.sigmoid(x[plane]) for plane in x.keys()
+        }
