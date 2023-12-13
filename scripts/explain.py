@@ -1,8 +1,10 @@
 from nugraph.explain_graph.gnn_explain import GlobalGNNExplain
+from nugraph.explain_graph.explain_network import ExplainNetwork
 import argparse
 
 explainations = {
     "GNNExplainer":GlobalGNNExplain, 
+    "ProbeExplainer": ExplainNetwork
 }
 
 def configure(): 
