@@ -42,7 +42,7 @@ def test_all_static_decoders():
 
     input_decoder, encoder_decoder, planar_decoder, nexus_decoder, output = e.step_network(load.data)
     for _, plane in enumerate(e.planes): 
-        expected_size = output['x_semantic'][plane].shape
+        expected_size = output[plane].shape
         assert input_decoder[plane].shape == expected_size
         
         assert encoder_decoder[plane].shape == expected_size
@@ -52,9 +52,19 @@ def test_all_static_decoders():
     # Same thing with the softmax 
     input_decoder, encoder_decoder, planar_decoder, nexus_decoder, output = e.step_network(load.data, apply_softmax=True)
     for _, plane in enumerate(e.planes): 
-        expected_size = torch.Size([output['x_semantic'][plane].shape[0]])
+        expected_size = torch.Size([output[plane].shape[0]])
         assert input_decoder[plane].shape == expected_size
         
         assert encoder_decoder[plane].shape == expected_size
         assert planar_decoder[0][plane].shape == expected_size
         assert nexus_decoder[0][plane].shape == expected_size
+
+
+def test_multiple_steps(): 
+    load = Load(test=True)
+    e = ProbedNetwork(model=load.model)
+    n_steps = 10
+    _, _, planar_decoder, nexus_decoder, _ = e.step_network(load.data, message_passing_steps=n_steps)
+
+    assert len(planar_decoder.keys()) == n_steps
+    assert len(nexus_decoder.keys()) == n_steps
