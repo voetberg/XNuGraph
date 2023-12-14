@@ -1,4 +1,3 @@
-from collections.abc import Iterable
 import torch
 import pytorch_lightning as pl
 import h5py
@@ -6,30 +5,30 @@ import h5py
 from nugraph.models import NuGraph2
 from nugraph.data import H5DataModule
 from nugraph import util
-from torch_geometric.loader import DataLoader
+from torch_geometric.data import Batch
 
-from torch_geometric.data import Batch, HeteroData
 from pynuml.io import H5Interface
 
 class Load: 
     def __init__(self,
-                 checkpoint_path="/wclustre/fwk/exatrkx/data/uboone/CHEP2023/paper.ckpt", 
+                 checkpoint_path="./paper.ckpt", 
                  data_path="/wclustre/fwk/exatrkx/data/uboone/CHEP2023/CHEP2023.gnn.h5", 
                  batch_size=1, 
                  test=False, 
                  planes=['u','v', 'y']) -> None:
         if test: 
             self.data = self.load_data("./test_data.h5", batch_size=1)
-            self.model = NuGraph2(in_features=6, checkpoint=False, planes=planes)
         else: 
             self.data = self.load_data(data_path, batch_size)
-            self.model = self.load_checkpoint(checkpoint_path) if checkpoint_path is not None else NuGraph2()
+        
+        self.model = self.load_checkpoint(checkpoint_path) if checkpoint_path is not None else NuGraph2()
 
         self.planes = planes
         #self.predictions = self.make_predictions()
 
     def load_checkpoint(self, checkpoint_path, graph=NuGraph2): 
         # Assumed pre-trained model that can perform inference on the loaded data
+
         try: 
             model = graph.load_from_checkpoint(
                 checkpoint_path, 
