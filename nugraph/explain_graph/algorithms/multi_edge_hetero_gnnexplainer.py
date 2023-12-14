@@ -1,5 +1,5 @@
 from nugraph.explain_graph.algorithms.hetero_gnnexplaner import HeteroGNNExplainer
-from nugraph.explain_graph.masking_utils import apply_predefined_mask
+from nugraph.explain_graph.utils.masking_utils import apply_predefined_mask
 from torch_geometric.explain import Explanation
 
 import copy 
@@ -19,7 +19,7 @@ class MultiEdgeHeteroGNNExplainer(HeteroGNNExplainer):
             nexus_mask = {}
 
             for plane in self.planes: 
-                plane_node_mask = graph[plane]['y_semantic'] == prediction_class
+                plane_node_mask = torch.argmax(graph[plane]['x_semantic'], axis=-1) == prediction_class
                 nodes_include = plane_node_mask.nonzero().squeeze()
 
                 plane_edges = graph[(plane, "plane", plane)]['edge_index']

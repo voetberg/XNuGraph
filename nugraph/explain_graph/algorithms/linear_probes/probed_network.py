@@ -1,5 +1,5 @@
 from nugraph.explain_graph.algorithms.linear_probes.linear_decoder import LinearDecoder
-from nugraph.explain_graph.load import Load
+from nugraph.explain_graph.utils.load import Load
 import torch 
 
 class ProbedNetwork: 

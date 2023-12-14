@@ -1,5 +1,5 @@
 from typing import Any, Dict, Optional, Union
-from torch_geometric.explain.config import ThresholdConfig, ThresholdType
+
 import copy
 import tqdm
 
@@ -9,12 +9,11 @@ from torch import Tensor
 from torch.nn.parameter import Parameter
 
 from torch_geometric.explain import Explainer, Explanation, ExplainerAlgorithm, GNNExplainer, HeteroExplanation 
-import pandas as pd 
 from torch_geometric.data import HeteroData
 from torch_geometric.explain.config import MaskType
 from torch_geometric.typing import EdgeType, NodeType
-from nugraph.explain_graph.load import Load
-from nugraph.explain_graph.masking_utils import get_masked_graph
+from nugraph.explain_graph.utils.load import Load
+from nugraph.explain_graph.utils.masking_utils import get_masked_graph
 
 
 class HeteroExplainer(Explainer): 
