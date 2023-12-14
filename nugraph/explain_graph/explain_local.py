@@ -90,7 +90,7 @@ class ExplainLocal:
 
     def save(self, file_name:str=None): 
         """
-        Save the results to hdf5 - saves to outpath/file_name.h5
+        Save the results
 
         Args:
             file_name (str, optional): Name of file. If not supplied, filename is results_$timestamp. Defaults to None.
@@ -101,8 +101,13 @@ class ExplainLocal:
 
         if file_name is None: 
             file_name = datetime.now().timestamp()
+        try: 
+            self.explainer.algorithm.plot_loss(f"{self.out_path}/exp_loss_{file_name}.png")
 
-        self.explainer.algorithm.plot_loss(f"{self.out_path}/exp_loss_{file_name}.png")
+        except AttributeError: 
+            pass 
+
+        
         json.dump(self.metrics, open(f"{self.out_path}/metrics_{file_name}.json", 'w'))
 
     def __call__(self, *args, **kwds):

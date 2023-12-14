@@ -4,6 +4,7 @@ from nugraph.explain_graph.edge_visuals import EdgeVisuals
 from torch_geometric.explain import ModelConfig
 from datetime import datetime 
 from nugraph.explain_graph.algorithms.hetero_gnnexplaner import HeteroGNNExplainer, HeteroExplainer
+from nugraph.explain_graph.algorithms.multi_edge_hetero_gnnexplainer import MultiEdgeHeteroGNNExplainer
 from nugraph.explain_graph.masking_utils import get_masked_graph
 
 class GlobalGNNExplain(ExplainLocal): 
@@ -42,7 +43,7 @@ class GlobalGNNExplain(ExplainLocal):
         if interactive: 
             [EdgeVisuals(planes=self.planes).interactive_plot(graph=subgraph, plane=plane, outdir=self.out_path, file_name=f"{plane}_{file_name}.html") for plane in self.planes]
         else: 
-            EdgeVisuals(planes=self.planes).plot(graph=subgraph, outdir=self.out_path, file_name=f"{file_name}.png")
+            EdgeVisuals(planes=self.planes).plot(graph=subgraph, outdir=self.out_path, file_name=f"{file_name}.png", nexus_distribution=True)
 
     def explain(self, data):
         graph = self.process_graph(next(iter(data))) 
@@ -53,3 +54,38 @@ class GlobalGNNExplain(ExplainLocal):
         self.metrics[str(len(self.metrics))] = metrics 
 
         return explaination
+    
+class ClasswiseGNNExplain(GlobalGNNExplain): 
+    def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y']):
+        super().__init__(data_path, out_path, checkpoint_path, batch_size, test, planes)
+        model_config =  ModelConfig(
+            mode='multiclass_classification',
+            task_level='node', 
+            return_type="raw")
+        
+        self.explainer = HeteroExplainer(
+            model=self.model, 
+            algorithm=MultiEdgeHeteroGNNExplainer(epochs=300, plane=self.planes), 
+            explanation_type='model', 
+            model_config=model_config,
+            node_mask_type="object",
+            edge_mask_type="object",
+        )
+
+    def visualize(self, explaination, file_name=None, interactive=False):
+        for key in explaination.keys(): 
+            class_file_name = file_name+str(key)
+            graph = explaination[key]
+            graph.graph.node_mask = graph.node_mask 
+            graph.graph.edge_mask = graph.edge_mask
+            super().visualize(explaination[key], class_file_name, interactive)
+        
+        self.explainer.algorithm.plot_loss(
+            f"{self.out_path.rstrip('/')}/explainer_loss.png"
+        )
+    
+    def calculate_metrics(self, explainations):
+        metrics = {}
+        for key in explainations: 
+            metrics[key] = super().calculate_metrics(explainations[key])
+        return metrics

@@ -1,10 +1,11 @@
-from nugraph.explain_graph.gnn_explain import GlobalGNNExplain
+from nugraph.explain_graph.gnn_explain import GlobalGNNExplain, ClasswiseGNNExplain
 from nugraph.explain_graph.gnn_explain_features import GNNExplainFeatures
 import argparse
 
 explainations = {
     "GNNExplainer":GlobalGNNExplain, 
-    "GNNFeatures": GNNExplainFeatures
+    "GNNFeatures": GNNExplainFeatures,
+    "GNNExplainEdges": ClasswiseGNNExplain
 }
 
 def configure(): 
