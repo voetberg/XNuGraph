@@ -8,8 +8,8 @@ from pynuml import io
 import torch 
 from datetime import datetime 
 
-from torch_geometric.explain import metric
-from nugraph.explain_graph import metrics
+
+from torch_geometric.explain import Explanation, metric
 
 
 class ExplainLocal:
@@ -35,20 +35,7 @@ class ExplainLocal:
         self.explainer = None
 
     def process_graph(self, graph):
-        """
-        Remove double connections from point to point - the graph is bidirectional and should be treated as such
-        """ 
         return graph 
-
-    def unpack(self, data): 
-        """Unpack the data to be used by the model"""
-        return (
-            data.collect('x'),
-            { p: data[p, 'plane', p].edge_index for p in self.model.planes }, 
-            { p: data[p, 'nexus', 'sp'].edge_index for p in self.model.planes },
-            torch.empty(data['sp'].num_nodes, 0),
-            { p: data[p].batch for p in self.model.planes }
-            )
 
 
     def inference(self, explaintion_kwargs=None): 

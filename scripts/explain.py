@@ -1,9 +1,12 @@
+
+from nugraph.explain_graph.explain_network import ExplainNetwork
 from nugraph.explain_graph.gnn_explain import GlobalGNNExplain, ClasswiseGNNExplain
 from nugraph.explain_graph.gnn_explain_features import GNNExplainFeatures
 import argparse
 
 explainations = {
     "GNNExplainer":GlobalGNNExplain, 
+    "ProbeExplainer": ExplainNetwork
     "GNNFeatures": GNNExplainFeatures,
     "GNNExplainEdges": ClasswiseGNNExplain
 }
