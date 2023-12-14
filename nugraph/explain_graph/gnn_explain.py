@@ -43,7 +43,7 @@ class GlobalGNNExplain(ExplainLocal):
         if interactive: 
             [EdgeVisuals(planes=self.planes).interactive_plot(graph=subgraph, plane=plane, outdir=self.out_path, file_name=f"{plane}_{file_name}.html") for plane in self.planes]
         else: 
-            EdgeVisuals(planes=self.planes).plot(graph=subgraph, outdir=self.out_path, file_name=f"{file_name}.png")
+            EdgeVisuals(planes=self.planes).plot(graph=subgraph, outdir=self.out_path, file_name=f"{file_name}.png", nexus_distribution=True)
 
     def explain(self, data):
         graph = self.process_graph(next(iter(data))) 

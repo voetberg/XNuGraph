@@ -100,18 +100,20 @@ class EdgeVisuals:
               ax=axes) 
         return drawn_plot
     
-    def get_graph(self, data_index): 
-
-        graph = self.data.get(data_index)
-        prediction = self.predictions[data_index]
+    def plot_nexus_weights(self, graph, plot): 
+        """Plot a histogram of the nexus edge weights
+        """
+        assert "edge_mask" in graph.keys
         for plane in self.planes: 
-            graph[plane]['pred_label'] = prediction[plane]['x_semantic']
-            graph[plane]['sem_label'] = prediction[plane]['y_semantic']
+            assert f"{plane}_nexus" in graph['edge_mask'].keys()
+            nexus_edges = graph['edge_mask'][f'{plane}_nexus'].ravel() 
 
-        return graph 
-    
+            plot.hist(nexus_edges, alpha=0.6, label=plane)
+        plot.set_title("Nexus Weight Importance")
+        plot.legend()
 
-    def plot(self, data_index=0, graph=None, title="", outdir=".", file_name="prediction_plot.png"): 
+
+    def plot(self, graph=None, title="", outdir=".", file_name="prediction_plot.png", nexus_distribution=False): 
         """_summary_
 
         Args:
@@ -124,18 +126,21 @@ class EdgeVisuals:
             outdir (str, optional): _description_. Defaults to ".".
             file_name (str, optional): _description_. Defaults to "prediction_plot.png".
         """
-        figure, subplots = plt.subplots(1, 3, figsize=( 16*3, 16))
+        n_xplot = len(self.planes) + int(nexus_distribution)
+
+        figure, subplots = plt.subplots(1, n_xplot, figsize=( 10*n_xplot, 10))#, sharex=True, sharey=True)
 
         for plane, subplot in zip(self.planes, subplots): 
-
-            if graph is None: 
-                graph = self.get_graph(data_index)
 
             subgraph = make_subgraph_kx(graph, plane=plane)
             node_list = subgraph.nodes 
 
             self.plot_graph(graph, subgraph, plane, node_list, subplot)
             subplot.set_title(plane)
+
+        if nexus_distribution: 
+            self.plot_nexus_weights(graph, subplots[-1])
+
 
         figure.supxlabel("wire")
         figure.supylabel("time")
@@ -222,7 +227,6 @@ class InteractiveEdgeVisuals:
         labels.columns = ['label']
         traces = []
         for unique in labels["label"].unique(): 
-            print(unique)
             nodes_to_include = labels[labels['label']==unique].index.tolist()
 
             label_group = subgraph.__class__()

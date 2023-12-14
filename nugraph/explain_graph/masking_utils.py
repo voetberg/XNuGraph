@@ -18,6 +18,7 @@ class MaskStrats:
     def top_quartile(graph: HeteroData, edge_weights:torch.Tensor, nexus_edge_weights:torch.Tensor, plane:str): 
         try: 
             edge_index = torch.where(edge_weights>edge_weights.quantile(0.25))[0]
+            
         except RuntimeError: 
             edge_index = []
         try: 

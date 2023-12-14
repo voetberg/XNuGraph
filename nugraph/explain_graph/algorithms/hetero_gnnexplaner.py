@@ -84,15 +84,15 @@ class HeteroExplainer(Explainer):
 
 
 class HeteroGNNExplainer(GNNExplainer): 
-    def __init__(self, epochs: int = 100, lr: float = 0.01, planes='u', **kwargs):
+    def __init__(self, epochs: int = 100, lr: float = 0.01, planes=['u', 'v', 'y'], **kwargs):
         super().__init__(epochs, lr, **kwargs)
         self.planes = planes
         self.loss_history = []
 
-    def forward(self, model, x, edge_index=None, node_index=None, **kwargs):
-        graph = kwargs['graph']
+    def forward(self, model, graph):
+        prediction = copy.deepcopy(graph)
 
-        prediction = self._train(model, graph, node_index)
+        prediction = self._train(model, prediction)
 
         node_mask = {key: self._post_process_mask(
                 self.node_mask[key],
@@ -184,7 +184,6 @@ class HeteroGNNExplainer(GNNExplainer):
  
         for i in tqdm.tqdm(range(self.epochs)):
             optimizer.zero_grad()
-
             stepped_graph = get_masked_graph(graph, node_mask=self.node_mask, edge_mask=self.edge_mask)
 
             model.step(stepped_graph)
