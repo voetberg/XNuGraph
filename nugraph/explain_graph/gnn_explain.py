@@ -1,13 +1,14 @@
 from nugraph.explain_graph.explain import ExplainLocal
-from nugraph.explain_graph.edge_visuals import EdgeVisuals
+from nugraph.explain_graph.utils.edge_visuals import EdgeVisuals
 
 from torch_geometric.explain import ModelConfig
 from datetime import datetime 
 from nugraph.explain_graph.algorithms.hetero_gnnexplaner import HeteroGNNExplainer, HeteroExplainer
 from nugraph.explain_graph.algorithms.multi_edge_hetero_gnnexplainer import MultiEdgeHeteroGNNExplainer
-from nugraph.explain_graph.masking_utils import get_masked_graph
-from nugraph.explain_graph.edge_visuals import EdgeVisuals, InteractiveEdgeVisuals, make_subgraph_kx
+from nugraph.explain_graph.utils.masking_utils import get_masked_graph
+from nugraph.explain_graph.utils.edge_visuals import EdgeVisuals, InteractiveEdgeVisuals, make_subgraph_kx
 
+import matplotlib.pyplot as plt 
 
 class GlobalGNNExplain(ExplainLocal): 
     def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y']):

@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 
 import torch
 import pandas as pd 
+import math 
 
 import matplotlib.colors as colors
 import matplotlib.cm as cmx
@@ -38,16 +39,19 @@ def make_subgraph_kx(graph, plane, semantic_classes=None):
         return subgraph_nx
     
 def extract_edge_weights(graph, plane, return_value=False, cmap='viridis'): 
+
+    weights = [1 for _ in range(len(graph[(plane, "plane", plane)]))]
+    weight_colors = 'grey'
+
     if "edge_mask" in graph.keys: 
         weights = graph["edge_mask"][plane]
-        weights = (weights - weights.min())/(weights.max() - weights.min())
+        if weights.numel() != 0: 
+            weights = (weights - weights.min())/(weights.max() - weights.min())
 
-        cNorm  = colors.Normalize(vmin=0, vmax=weights.max())
-        color_map = cmx.ScalarMappable(norm=cNorm, cmap=plt.get_cmap(cmap))
-        weight_colors = [color_map.to_rgba(weight) for weight in weights]
-    else: 
-        weights = [1 for _ in range(len(graph[(plane, "plane", plane)]))]
-        weight_colors = 'grey'
+            cNorm  = colors.Normalize(vmin=0, vmax=weights.max())
+            color_map = cmx.ScalarMappable(norm=cNorm, cmap=plt.get_cmap(cmap))
+            weight_colors = [color_map.to_rgba(weight) for weight in weights]
+
     
     if return_value: 
         return weights
@@ -107,8 +111,11 @@ class EdgeVisuals:
         for plane in self.planes: 
             assert f"{plane}_nexus" in graph['edge_mask'].keys()
             nexus_edges = graph['edge_mask'][f'{plane}_nexus'].ravel() 
+            
+            bins = math.ceil(math.sqrt(len(nexus_edges)))
+            bins = bins if bins!=0 else 10
+            plot.hist(nexus_edges, alpha=0.6, label=plane, bins=bins)
 
-            plot.hist(nexus_edges, alpha=0.6, label=plane)
         plot.set_title("Nexus Weight Importance")
         plot.legend()
 

@@ -6,9 +6,10 @@ import copy
 import torch
 
 class MultiEdgeHeteroGNNExplainer(HeteroGNNExplainer): 
-    def __init__(self, epochs: int = 100, lr: float = 0.01, plane='u', **kwargs):
+    def __init__(self, epochs: int = 100, lr: float = 0.01, plane='u', incorrect_only=False, **kwargs):
         super().__init__(epochs, lr, plane, **kwargs)
         self.loss_history = {}
+        self.incorrect_only = incorrect_only
 
     def _classwise_subgraphs(self, graph, predictions): 
         unique_category = torch.unique(torch.concat([predictions[plane] for plane in self.planes]))
@@ -19,7 +20,12 @@ class MultiEdgeHeteroGNNExplainer(HeteroGNNExplainer):
             nexus_mask = {}
 
             for plane in self.planes: 
-                plane_node_mask = torch.argmax(graph[plane]['x_semantic'], axis=-1) == prediction_class
+                plane_node_mask = predictions[plane] == prediction_class
+
+                if self.incorrect_only: 
+                    incorrect_mask = (graph[plane]['y_semantic'] != predictions[plane]) 
+                    plane_node_mask = torch.logical_and(plane_node_mask, incorrect_mask)
+
                 nodes_include = plane_node_mask.nonzero().squeeze()
 
                 plane_edges = graph[(plane, "plane", plane)]['edge_index']
@@ -30,10 +36,6 @@ class MultiEdgeHeteroGNNExplainer(HeteroGNNExplainer):
 
             subgraphs[prediction_class.item()] = apply_predefined_mask(graph.detach(), node_mask, edge_mask, nexus_mask, self.planes)
         return subgraphs
-
-
-    def plot_loss(self, file_name):
-        return super().plot_loss(file_name)
     
     def forward(self, model, graph):
         prediction = copy.deepcopy(graph)
@@ -43,6 +45,7 @@ class MultiEdgeHeteroGNNExplainer(HeteroGNNExplainer):
         classwise_subgraphs = self._classwise_subgraphs(prediction, predicted_classes)
         explainations = {}
         for item, graph in classwise_subgraphs.items(): 
+
             _, history = self._train(model, graph, loss_history=[])
             self.loss_history[item] = history
 

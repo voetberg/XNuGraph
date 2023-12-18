@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Union
+from typing import Dict
 
 import copy
 import tqdm
@@ -42,10 +42,11 @@ class HeteroExplainer(Explainer):
 
         ## Checking for the types to return for explaination
 
-        if 'edge_mask' in explaination: 
-            graph['edge_mask'] = explaination['edge_mask']
-        if "node_mask" in explaination: 
-            graph['node_mask'] = explaination['node_mask']
+        # if 'edge_mask' in explaination: 
+        #     graph['edge_mask'] = explaination['edge_mask']
+        # if "node_mask" in explaination: 
+        #     graph['node_mask'] = explaination['node_mask']
+
         return explaination
 
     def hetero_call(self, graph): 
@@ -176,8 +177,14 @@ class HeteroGNNExplainer(GNNExplainer):
     
 
     def _train(self, model, graph, node_index=None, loss_history=None, **kwargs):
+        copy_graph = copy.deepcopy(graph)
         graph.requires_grad=True
-
+        model.step(copy_graph) # Set the y 
+        y = torch.concat([
+                torch.argmax(copy_graph[plane]['x_semantic'], dim=-1).to(torch.float)
+                for plane in self.planes
+                ]).to(torch.float)
+        
         parameters = self.assign_nexus_masks(graph)
         optimizer = torch.optim.Adam(parameters, lr=self.lr)
  
@@ -186,17 +193,14 @@ class HeteroGNNExplainer(GNNExplainer):
             stepped_graph = get_masked_graph(graph, node_mask=self.node_mask, edge_mask=self.edge_mask)
 
             model.step(stepped_graph)
-            
-            y = torch.concat([
-                stepped_graph[plane]["y_semantic"] 
-                for plane in self.planes
-                ]).to(torch.float)
-            
             y_hat = torch.concat([
                 torch.argmax(stepped_graph[plane]['x_semantic'], dim=-1).to(torch.float)
                 for plane in self.planes
             ]).to(torch.float)
 
+
+            # Match the output of the model
+        
             assert y.size() == y_hat.size(), print(f"{y.size()} vs {y_hat.size()}")## Personal check that things are not weirdly transposed
 
             if node_index is not None: 

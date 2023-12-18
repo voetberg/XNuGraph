@@ -1,16 +1,13 @@
 import tqdm 
 import os 
 import json 
-from nugraph.explain_graph.load import Load
-import h5py
-from pynuml import io
+from nugraph.explain_graph.utils.load import Load
 
-import torch 
 from datetime import datetime 
 
 
 from torch_geometric.explain import metric as pyg_metrics
-from nugraph.explain_graph import metrics 
+from nugraph.explain_graph.utils import metrics 
 
 
 class ExplainLocal:
