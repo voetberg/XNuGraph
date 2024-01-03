@@ -2,7 +2,7 @@ import pytest
 import torch 
 import os 
 
-from nugraph.explain_graph.explain_local import ExplainLocal
+from nugraph.explain_graph.explain import ExplainLocal
 from nugraph.data import H5DataModule
 
 checkpoint_path = "tests/resources/paper.ckpt" # Not for remote ci/cd

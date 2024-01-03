@@ -41,7 +41,7 @@ def run_explaination(checkpoint, algorithm, outfile, data_path, batch_size, test
         test=test)
     
     e = explain.explain(explain.data)
-    explain.visualize(e, file_name=file_name, interactive=interactive)
+    explain.visualize(e, file_name=file_name)
     explain.save(file_name=file_name)
 
 if __name__=='__main__': 

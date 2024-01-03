@@ -10,7 +10,11 @@ class LinearDecoder:
             self.decoder[plane] = self.class_decoder(in_shape)
 
     def class_decoder(self, in_shape): 
-        return torch.ones(in_shape) 
+        if type(in_shape) == int: 
+            eye = torch.eye(in_shape)
+            return eye
+        else: 
+            return torch.eye(*in_shape)
     
     def forward(self, x): 
         return {
