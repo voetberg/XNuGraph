@@ -1,6 +1,6 @@
 import torch
 
-class LinearDecoder: 
+class StaticLinearDecoder: 
     def __init__(self, in_shape, planes, num_classes) -> None:
         self.decoder = {}
         self.planes = planes 
@@ -11,10 +11,8 @@ class LinearDecoder:
 
     def class_decoder(self, in_shape): 
         if type(in_shape) == int: 
-            eye = torch.eye(in_shape)
-            return eye
-        else: 
-            return torch.eye(*in_shape)
+            in_shape = (in_shape)
+        return torch.eye(*in_shape)
     
     def forward(self, x): 
         return {
@@ -30,4 +28,21 @@ class LinearDecoder:
     def probablity(self, x):
         return {
             plane: torch.nn.functional.sigmoid(x[plane]) for plane in x.keys()
+        }
+    
+class DynamicLinearDecoder(StaticLinearDecoder, torch.nn.Module): 
+    def __init__(self, in_shape, planes, num_classes) -> None:
+        super().__init__(in_shape, planes, num_classes)
+        self.decoder = torch.nn.ModuleDict()
+        for plane in planes: 
+            self.decoder[plane] = self.class_decoder(in_shape)
+
+    def class_decoder(self, in_shape):
+        if type(in_shape) == int: 
+            in_shape = (in_shape)
+        return torch.nn.Linear(*in_shape, self.num_classes)
+    
+    def forward(self, x):
+        return {
+            plane: self.decoder[plane](x[plane]) for plane in self.planes
         }

@@ -1,5 +1,5 @@
 from nugraph.explain_graph.utils.load import Load
-from nugraph.explain_graph.algorithms.linear_probes.probed_network import ProbedNetwork
+from nugraph.explain_graph.algorithms.linear_probes.probed_network import ProbedNetwork, DynamicProbedNetwork
 
 from nugraph.explain_graph.explain import ExplainLocal
 import torch 
@@ -88,3 +88,12 @@ class ExplainNetwork(ExplainLocal):
         plt.tight_layout()
         plt.savefig(f"{self.out_path.rstrip('/')}/{file_name}_information_gain.png")
     
+
+class DynamicExplainNetwork(ExplainNetwork): 
+    def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, planes=['u', 'v', 'y'], message_passing_steps=5, batch_size: int = 16, test: bool = False):
+        super().__init__(data_path, out_path, checkpoint_path, planes, message_passing_steps, batch_size, test)
+        self.explainer = DynamicProbedNetwork(model=self.model, planes=self.planes, data=self.data)
+
+    def visualize(self, explaination=None, file_name="explaination_graph"):
+        super().visualize(explaination, file_name)
+        self.explainer.plot_probe_training_history(self.out_path)

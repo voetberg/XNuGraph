@@ -1,9 +1,12 @@
-from nugraph.explain_graph.algorithms.linear_probes.linear_decoder import LinearDecoder
-from nugraph.explain_graph.utils.load import Load
 import torch 
+import tqdm
+from typing import Any, Callable
+import matplotlib.pyplot as plt
 
+from nugraph.explain_graph.algorithms.linear_probes.linear_decoder import StaticLinearDecoder, DynamicLinearDecoder
+from nugraph.explain_graph.utils.load import Load
 from nugraph.util import RecallLoss
-from nugraph.explain_graph.algorithms.linear_probes.mutual_information import MutualInformation, DistributionEntropy
+from nugraph.explain_graph.algorithms.linear_probes.mutual_information import MutualInformation
 
 
 class ProbedNetwork: 
@@ -35,7 +38,7 @@ class ProbedNetwork:
 
         decoder_inshape = len(self.semantic_classes)#self.model.decoders[0].net[self.planes[0]].net[0].weight.shape[-1]
 
-        linear_net = lambda input_shape: LinearDecoder(input_shape, self.planes, len(self.semantic_classes))
+        linear_net = lambda input_shape: StaticLinearDecoder(input_shape, self.planes, len(self.semantic_classes))
 
         self.input_decoder = linear_net((input_inshape, len(self.semantic_classes)))
         self.encoder_decoder =  linear_net((encoder_inshape, 1))#len(self.semantic_classes)))
@@ -129,3 +132,128 @@ class ProbedNetwork:
         for plane in self.planes: 
             loss[plane] = self.loss_metric(y_hat[plane], y[plane]).item()
         return loss
+    
+
+class DynamicProbedNetwork(ProbedNetwork): 
+
+    def __init__(self, 
+                 model, 
+                 data,
+                 planes=['u', 'v', 'y'], 
+                 semantic_classes=['MIP','HIP','shower','michel','diffuse'], 
+                 explain_metric = MutualInformation(), 
+                 loss_metric = RecallLoss(), 
+        ) -> None:
+        super().__init__(model, planes, semantic_classes, explain_metric, loss_metric)
+        self.data = data
+        self.make_probes()
+
+    def make_probes(self): 
+        probe = lambda in_shape: DynamicLinearDecoder(in_shape, self.planes, len(self.semantic_classes))
+        train_probe = lambda probe: TrainProbes(probe, loss_function=self.loss_metric, data=self.data)()
+
+        input_inshape = ""
+        encoder_inshape = ""
+        planar_inshape = ""
+        decoder_inshape = ""
+
+        self.input_decoder = probe(input_inshape)
+        input_train, input_val = train_probe(self.input_decoder)
+
+        self.encoder_decoder =  probe((encoder_inshape, 1))#len(self.semantic_classes)))
+        encoder_train, encoder_val = train_probe(self.encoder_decoder)
+
+        # TODO Multiple probes for different message passing steps 
+        self.planar_decoder =  probe((planar_inshape,1))
+        planar_train, planar_val = train_probe(self.planar_decoder)
+
+        self.nexus_decoder =  probe((planar_inshape,1))
+        nexus_train, nexus_val = train_probe(self.nexus_decoder)
+
+        self.output_decoder = probe((decoder_inshape,len(self.semantic_classes)))
+        output_train, output_val = train_probe(self.output_decoder)
+
+        self.probe_training_history = {
+            "train": {
+                "input": input_train, 
+                "encoder": encoder_train, 
+                "planar": planar_train, 
+                "nexus": nexus_train, 
+                "output": output_train
+                      },
+            "val": {
+                "input": input_val, 
+                "encoder": encoder_val, 
+                "planar": planar_val, 
+                "nexus": nexus_val, 
+                "output": output_val
+            }
+        }
+
+    def plot_probe_training_history(self, out_path, file_name=""): 
+
+        plt.close("all")
+
+        fig, subplots = plt.subplots(nrows=1, ncols=5)
+        for subplot, key in zip(subplots, self.probe_training_history['train'].keys()): 
+            
+            train = self.probe_training_history['train'][key].values()
+            val = self.probe_training_history['train'][key].values()
+            index = self.probe_training_history['train'][key].keys()
+
+            subplot.plot(index, train, label='Train', color="blue")
+            subplot.plot(index, val, label="Val", linestyle=(5, (10, 3)), color="orange")
+            subplot.set_title(key)
+
+        fig.subpxlabel("Training Epoch")
+        fig.supylabel("Loss")
+        fig.tight_layout() 
+        plt.legend()
+        plt.savefig(f"{out_path.rstrip('/')}/{file_name}_probe_loss.png")
+
+
+class TrainProbes: 
+    def __init__(self, probe:DynamicLinearDecoder, loss_function:Callable, data) -> None:
+        self.probe = probe 
+        self.probe_loss_train = {}
+        self.probe_loss_validation = {}
+        self.data = data
+        self.loss_function = loss_function
+
+        self.optimizer = torch.optim.SGD(params = self.probe.params, lr=0.01)
+
+    def loss(self, x, labels): 
+        prediction = self.probe.forward(x)
+        loss = self.loss_function(prediction, labels)
+        return loss
+
+    def train(self):
+        self.probe.train(True)
+        running_loss = []
+        for batch in self.data.train: 
+            loss = self.loss(batch, labels=batch[""])
+            loss.backward()
+            self.optimizer.step()
+            running_loss.append(loss)
+
+        loss = torch.mean(torch.tensor(running_loss))
+        return loss
+    
+    def validate(self): 
+        self.probe.train(False)
+        running_loss = []
+        for batch in self.data.validation: 
+            loss = self.loss(batch, labels=batch[""])
+            running_loss.append(loss)
+
+        loss = torch.mean(torch.tensor(running_loss))
+        return loss
+
+    def __call__(self, epochs=20) -> Any:
+        for epoch in tqdm.tqdm(range(epochs)): 
+            train_loss = self.train()
+            val_loss = self.validate()
+            self.probe_loss_train[epoch] = train_loss
+            self.probe_loss_validation[epoch] = val_loss
+
+        return self.probe_loss_train, self.probe_loss_validation
