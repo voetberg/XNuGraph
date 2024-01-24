@@ -32,7 +32,9 @@ class StaticLinearDecoder:
     
 class DynamicLinearDecoder(StaticLinearDecoder, torch.nn.Module): 
     def __init__(self, in_shape, planes, num_classes) -> None:
-        super().__init__(in_shape, planes, num_classes)
+        StaticLinearDecoder.__init__(self, in_shape, planes, num_classes)
+        torch.nn.Module.__init__(self)
+
         self.decoder = torch.nn.ModuleDict()
         for plane in planes: 
             self.decoder[plane] = self.class_decoder(in_shape)

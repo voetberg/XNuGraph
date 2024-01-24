@@ -1,7 +1,6 @@
 
 from nugraph.explain_graph.explainer_probes import ExplainNetwork, DynamicExplainNetwork
-from nugraph.explain_graph.gnn_explain import GlobalGNNExplain, ClasswiseGNNExplain, GNNExplainFeatures
-
+from nugraph.explain_graph.gnn_explain import GlobalGNNExplain, ClasswiseGNNExplain, GNNExplainFeatures,  GNNExplainerPrune
 import argparse
 
 explainations = {
@@ -9,7 +8,8 @@ explainations = {
     "ProbeExplainer": ExplainNetwork,
     "GNNFeatures": GNNExplainFeatures,
     "GNNExplainEdges": ClasswiseGNNExplain, 
-    "DynamicProbeExplainer": DynamicExplainNetwork
+    "DynamicProbeExplainer": DynamicExplainNetwork,
+    "GNNExplainerPrune": GNNExplainerPrune
 }
 
 def configure(): 

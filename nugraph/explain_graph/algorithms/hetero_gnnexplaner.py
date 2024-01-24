@@ -37,17 +37,7 @@ class HeteroExplainer(Explainer):
         return out
 
     def __call__(self, graph) -> Explanation | HeteroExplanation:
-
-        explaination = self.hetero_call(graph)
-
-        ## Checking for the types to return for explaination
-
-        # if 'edge_mask' in explaination: 
-        #     graph['edge_mask'] = explaination['edge_mask']
-        # if "node_mask" in explaination: 
-        #     graph['node_mask'] = explaination['node_mask']
-
-        return explaination
+        return self.hetero_call(graph)
 
     def hetero_call(self, graph): 
 
@@ -112,25 +102,28 @@ class HeteroGNNExplainer(GNNExplainer):
             explainer[plane]['pos'] = graph[plane]['pos']
             explainer[plane]['pred_label'] = prediction[plane]['x_semantic']
             explainer[plane]['sem_label'] = graph[plane]['y_semantic']
-            explainer[plane]['x']=graph[plane]['x']
+            explainer[plane]['x'] = graph[plane]['x']
 
         return explainer
     
-    def assign_planar_masks(self, graph, plane): 
+    def assign_planar_masks(self, graph, plane, edge=True, node=True): 
         node_mask_type = self.explainer_config.node_mask_type
 
         x_mask = graph[plane]['x']
         edge_index_mask = graph[plane, 'plane', plane]['edge_index'].to(torch.float)
+        edge_mask = None 
 
         (N, F), E = x_mask.size(), edge_index_mask.size(1) 
         node_mask = None 
 
-        if node_mask_type == MaskType.object:
-            node_mask = Parameter(torch.randn(N, 1) * 0.1)
-        elif node_mask_type == MaskType.attributes:
-            node_mask = Parameter(torch.randn(N, F) * 0.1)
-        std = torch.nn.init.calculate_gain('relu') * math.sqrt(2.0 / (2 * N))
-        edge_mask = Parameter(torch.randn(E) * std)
+        if node: 
+            if node_mask_type == MaskType.object:
+                node_mask = Parameter(torch.randn(N, 1) * 0.1)
+            elif node_mask_type == MaskType.attributes:
+                node_mask = Parameter(torch.randn(N, F) * 0.1)
+        if edge: 
+            std = torch.nn.init.calculate_gain('relu') * math.sqrt(2.0 / (2 * N))
+            edge_mask = Parameter(torch.randn(E) * std)
 
         parameters = []
         if node_mask is not None:
@@ -141,37 +134,42 @@ class HeteroGNNExplainer(GNNExplainer):
         
         return parameters, node_mask, edge_mask
 
-    def assign_nexus_masks(self, graph): 
-        # Soft Masks
-        self.node_mask = {}
-        self.edge_mask = {}
+    def assign_nexus_masks(self, graph, edge=True, node=True): 
+        if node: 
+            self.node_mask = {}
+            self.hard_node_mask = {}
 
-        # Hard Masks 
-        self.hard_node_mask = {}
-        self.hard_edge_mask = {}
+        if edge: 
+            self.edge_mask = {}
+            self.hard_edge_mask = {}
+
         all_parameters = []
 
         for plane in self.planes: 
             ## planar masks 
-            parameters, node_mask, edge_mask = self.assign_planar_masks(graph, plane)
+            parameters, node_mask, edge_mask = self.assign_planar_masks(graph, plane, edge=edge, node=node)
             all_parameters+=parameters
-            self.node_mask[plane] = node_mask
-            self.edge_mask[plane] = edge_mask
 
-            self.hard_edge_mask[plane] = torch.ones_like(edge_mask).to(bool)
-            self.hard_node_mask[plane] = torch.ones_like(node_mask).to(bool)
+            if node: 
+                self.node_mask[plane] = node_mask
+                self.hard_node_mask[plane] = torch.ones_like(node_mask).to(bool)
 
-            ## nexus masks 
-            nexus_edge = graph[(plane, 'nexus', 'sp')]['edge_index'].to(torch.float)
-            N, _ = node_mask.size()
-            E = nexus_edge.size(1)
-            std = torch.nn.init.calculate_gain('relu') * math.sqrt(2.0 / (2 * N))
-            edge_mask = Parameter(torch.randn(E) * std)
+            if edge: 
+                self.edge_mask[plane] = edge_mask
+                self.hard_edge_mask[plane] = torch.ones_like(edge_mask).to(bool)
 
-            self.edge_mask[f"{plane}_nexus"] = edge_mask
-            self.hard_edge_mask[f"{plane}_nexus"] = torch.ones_like(edge_mask).to(bool)
+                ## nexus masks 
+                nexus_edge = graph[(plane, 'nexus', 'sp')]['edge_index'].to(torch.float)
+                N, _ = graph[plane]['x'].size()
+                E = nexus_edge.size(1)
+                std = torch.nn.init.calculate_gain('relu') * math.sqrt(2.0 / (2 * N))
+                edge_mask = Parameter(torch.randn(E) * std)
 
-            all_parameters.append(edge_mask)
+                self.edge_mask[f"{plane}_nexus"] = edge_mask
+                self.hard_edge_mask[f"{plane}_nexus"] = torch.ones_like(edge_mask).to(bool)
+
+                all_parameters.append(edge_mask)
+
 
         return all_parameters
     
@@ -240,12 +238,17 @@ class HeteroGNNExplainer(GNNExplainer):
         return stepped_graph
 
     def get_nexus_m(self): 
-        m_node = torch.concat([
-            self.node_mask[key][self.hard_node_mask[key]].sigmoid() 
-            for key in self.node_mask.keys()])
-        m_edge = torch.concat([
-            self.edge_mask[key][self.hard_edge_mask[key]].sigmoid() 
-            for key in self.edge_mask.keys()])
+        m_edge = None 
+        m_node = None 
+        if self.node_mask is not None: 
+            m_node = torch.concat([
+                self.node_mask[key][self.hard_node_mask[key]].sigmoid() 
+                for key in self.node_mask.keys()])
+            
+        if self.edge_mask is not None:
+            m_edge = torch.concat([
+                self.edge_mask[key][self.hard_edge_mask[key]].sigmoid() 
+                for key in self.edge_mask.keys()])
         
         return m_node, m_edge
 

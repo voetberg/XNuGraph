@@ -15,14 +15,18 @@ class Load:
                  data_path="/wclustre/fwk/exatrkx/data/uboone/CHEP2023/CHEP2023.gnn.h5", 
                  batch_size=1, 
                  test=False, 
-                 planes=['u','v', 'y']) -> None:
+                 planes=['u','v','y']) -> None:
         if test: 
             self.data = self.load_data("./test_data.h5", batch_size=1)
         else: 
             self.data = self.load_data(data_path, batch_size)
-        
-        self.model = self.load_checkpoint(checkpoint_path) if checkpoint_path is not None else NuGraph2()
-
+        try: 
+            self.model = self.load_checkpoint(checkpoint_path)
+            
+        except Exception as e: 
+            print(e)
+            print("Could not load checkpoint, using an untrained network")
+            self.model = NuGraph2()
         self.planes = planes
         #self.predictions = self.make_predictions()
 

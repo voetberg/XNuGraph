@@ -36,17 +36,19 @@ def get_masked_graph(graph:HeteroData, node_mask:dict, edge_mask:dict, mask_stra
     masked_graph = copy.deepcopy(graph)
     for plane in planes: 
 
-        node_weights = node_mask[plane].sigmoid()
-        nodes = graph[plane]['x']*node_weights
-        masked_graph[plane]['x'] = nodes
+        if node_mask is not None: 
+            node_weights = node_mask[plane].sigmoid()
+            nodes = graph[plane]['x']*node_weights
+            masked_graph[plane]['x'] = nodes
 
-        edge_weights = edge_mask[plane].sigmoid()
-        nexus_edge_weights = edge_mask[f"{plane}_nexus"].sigmoid()
+        if edge_mask is not None: 
+            edge_weights = edge_mask[plane].sigmoid()
+            nexus_edge_weights = edge_mask[f"{plane}_nexus"].sigmoid()
 
-        edges, edges_nexus = mask_strategy(graph, edge_weights, nexus_edge_weights, plane=plane)
+            edges, edges_nexus = mask_strategy(graph, edge_weights, nexus_edge_weights, plane=plane)
 
-        masked_graph[(plane, "plane", plane)]['edge_index'] = edges
-        masked_graph[(plane, 'nexus', 'sp')]['edge_index'] = edges_nexus
+            masked_graph[(plane, "plane", plane)]['edge_index'] = edges
+            masked_graph[(plane, 'nexus', 'sp')]['edge_index'] = edges_nexus
 
     return masked_graph 
 

@@ -95,5 +95,4 @@ class DynamicExplainNetwork(ExplainNetwork):
         self.explainer = DynamicProbedNetwork(model=self.model, planes=self.planes, data=self.data)
 
     def visualize(self, explaination=None, file_name="explaination_graph"):
-        super().visualize(explaination, file_name)
-        self.explainer.plot_probe_training_history(self.out_path)
+        self.explainer.plot_probe_training_history(self.out_path, file_name)
