@@ -25,11 +25,19 @@ class FeatureLoss:
         label_binary_mask = torch.isin(label['y_semantic'], binary).long()
  
         x_binary = x * x_binary_mask
-        label_binary = label['y_semantic'] * label_binary_mask
+        label_binary = label['y_semantic'] * label_binary_mask    
 
         loss = torch.nn.CrossEntropyLoss()(x_binary[:,:,0], label_binary)
         return loss
 
     @staticmethod
     def _hipmip(x, label): 
-        pass 
+        """
+            Verifies the model can tell the difference between two different track type hits
+            Constructs a binary mask of hip or mip, and then tells the difference between the two
+        """
+        track_filter = torch.where(torch.tensor([True]), torch.isin(label['y_semantic'], torch.tensor([0,1])), other=torch.tensor([torch.nan])) # Pick if in either track class
+        y_hat = x[:,:,0] * torch.stack([track_filter for _ in range(x.size(1))]).mT
+        y = label['y_semantic'] * track_filter
+        loss = torch.nn.CrossEntropyLoss()(y_hat, y.type(torch.LongTensor))
+        return loss

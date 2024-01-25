@@ -1,11 +1,8 @@
 import math
 import torch 
-import tqdm
-from typing import Any, Callable
+import numpy as np
 import matplotlib.pyplot as plt
 from torch_geometric.data import Batch
-
-import json 
 
 from nugraph.explain_graph.algorithms.linear_probes.linear_decoder import StaticLinearDecoder, DynamicLinearDecoder
 from nugraph.explain_graph.utils.load import Load
@@ -82,7 +79,6 @@ class ProbedNetwork:
 
         output = self.model.decoders[0](forward, batch)['x_semantic']
         output_decoded = self.output_decoder.forward(output)
-        #output_decoded = {plane: output_decoded[plane].unsqueeze(-1) for plane in self.planes}
 
         if apply_sigmoid: 
             input_decoded = self.input_decoder.probablity(input_decoded)
@@ -151,43 +147,57 @@ class DynamicProbedNetwork(ProbedNetwork):
                  message_passing_steps=5,
         ) -> None:
         super().__init__(model, planes, semantic_classes, explain_metric, loss_metric)
+        self.message_passing_steps = message_passing_steps
         self.epochs = epochs
         self.probe_training_history = {}
         self.make_probes()
 
         self.step_network_with_training(data, message_passing_steps)
 
-
     def make_probes(self): 
         probe = lambda in_shape: DynamicLinearDecoder((in_shape, 1), self.planes, len(self.semantic_classes))
-        train_probe = lambda probe: TrainProbes(probe, loss_function="tracks")
+        train_probe_track = lambda probe: TrainProbes(probe, loss_function="tracks")
+        train_probe_hipmip = lambda probe: TrainProbes(probe, loss_function="hipmip")
 
         encoder_inshape = self.model.encoder.net[self.planes[0]][0].net[0].weight.shape[0]
         planar_inshape = self.model.plane_net.net[self.planes[0]].node_net[-2].net[0].weight.shape[1]
 
-        self.encoder_decoder =  probe(encoder_inshape)#len(self.semantic_classes)))
-        self.encoder_training = train_probe(self.encoder_decoder)
+        encoder_decoder =  probe(encoder_inshape)
+        self.encoder_training_track = train_probe_track(encoder_decoder)
+        encoder_decoder =  probe(encoder_inshape)
+        self.encoder_training_hipmip = train_probe_hipmip(encoder_decoder)
 
-        # TODO Multiple probes for different message passing steps 
-        self.planar_decoder =  probe(planar_inshape)
-        self.planar_training = train_probe(self.planar_decoder)
+        planar_decoder = [probe(planar_inshape) for _ in range(self.message_passing_steps)]
+        self.planar_training_track = [train_probe_track(decoder) for decoder in planar_decoder]
+        planar_decoder = [probe(planar_inshape) for _ in range(self.message_passing_steps)]
+        self.planar_training_hipmip = [train_probe_hipmip(decoder) for decoder in planar_decoder]
 
-        self.nexus_decoder =  probe(planar_inshape)
-        self.nexus_training = train_probe(self.nexus_decoder)
+        nexus_decoder =  [probe(planar_inshape) for _ in range(self.message_passing_steps)]
+        self.nexus_training_track = [train_probe_track(decoder) for decoder in nexus_decoder]
+        nexus_decoder =  [probe(planar_inshape) for _ in range(self.message_passing_steps)]
+        self.nexus_training_hipmip = [train_probe_hipmip(decoder) for decoder in nexus_decoder]
 
-        self.output_decoder = probe(planar_inshape)
-        self.output_training = train_probe(self.output_decoder)
-
+        output_decoder = probe(planar_inshape)
+        self.output_training_track = train_probe_track(output_decoder)
+        output_decoder = probe(planar_inshape)
+        self.output_training_hipmip = train_probe_hipmip(output_decoder)
 
     def step_network_with_training(self,data, message_passing_steps): 
-        self.probe_training_history = {
+        self.probe_history_tracks = {
                 "encoder": {"train":[], "val":[]},
                 "planar": {"train":[], "val":[]},
                 "nexus": {"train":[], "val":[]},
                 "output": {"train":[], "val":[]}
             }
         
-        for epoch in range(self.epochs): 
+        self.probe_history_hipmip = {
+                "encoder": {"train":[], "val":[]},
+                "planar": {"train":[], "val":[]},
+                "nexus": {"train":[], "val":[]},
+                "output": {"train":[], "val":[]}
+            }
+        
+        for _ in range(self.epochs): 
                         
             x, edge_index_plane, edge_index_nexus, nexus, batch = Load.unpack(data)
             x = {plane: x[plane][:,:4] for plane in self.planes}
@@ -196,12 +206,21 @@ class DynamicProbedNetwork(ProbedNetwork):
             forward = self.model.encoder.forward(forward)
 
             encoder_forward = forward.copy()
-            encoder_train, encoder_val = self.encoder_training.step([encoder_forward], [data])
+            train, val = self.encoder_training_track.step([encoder_forward], [data])
+            self.probe_history_tracks["encoder"]["train"].append(train)
+            self.probe_history_tracks["encoder"]["val"].append(val)
 
-            planar_decoded = {"train":[], "val":[]}
-            nexus_decoded = {"train":[], "val":[]}
-        
-            for _ in range(message_passing_steps): 
+            train, val = self.encoder_training_hipmip.step([encoder_forward], [data])
+            self.probe_history_hipmip["encoder"]["train"].append(train)
+            self.probe_history_hipmip["encoder"]["val"].append(val)
+
+            planar_decoded_track = {"train":[], "val":[]}
+            nexus_decoded_track = {"train":[], "val":[]}
+
+            planar_decoded_hm = {"train":[], "val":[]}
+            nexus_decoded_hm = {"train":[], "val":[]}
+
+            for message_step in range(message_passing_steps): 
 
                 for p in self.planes:
                     s = x[p].detach().unsqueeze(1).expand(-1, forward[p].size(1), -1)
@@ -210,15 +229,32 @@ class DynamicProbedNetwork(ProbedNetwork):
                 self.model.plane_net(forward, edge_index_plane)
                 planar_forward = forward.copy() 
 
-                train, val = self.planar_training.step([planar_forward], [data])
-                planar_decoded['train'].append(train)
-                planar_decoded['val'].append(val)
+                train, val = self.planar_training_track[message_step].step([planar_forward], [data])
+                planar_decoded_track['train'].append(train)
+                planar_decoded_track['val'].append(val)
+                train, val = self.planar_training_hipmip[message_step].step([planar_forward], [data])
+                planar_decoded_hm['train'].append(train)
+                planar_decoded_hm['val'].append(val)
 
                 self.model.nexus_net(forward, edge_index_nexus, nexus)
                 nexus_forward = forward.copy() 
-                train, val = self.nexus_training.step([nexus_forward], [data])
-                nexus_decoded['train'].append(train)
-                nexus_decoded['val'].append(val)
+
+                train, val = self.nexus_training_track[message_step].step([nexus_forward], [data])
+                nexus_decoded_track['train'].append(train)
+                nexus_decoded_track['val'].append(val)
+                train, val = self.nexus_training_hipmip[message_step].step([nexus_forward], [data])
+                nexus_decoded_hm['train'].append(train)
+                nexus_decoded_hm['val'].append(val)
+
+            self.probe_history_tracks["planar"]["train"].append(planar_decoded_track['train'])
+            self.probe_history_tracks["planar"]["val"].append(planar_decoded_track['val'])
+            self.probe_history_tracks["nexus"]["train"].append(nexus_decoded_track['train'])
+            self.probe_history_tracks["nexus"]["val"].append(nexus_decoded_track['val'])
+
+            self.probe_history_hipmip["planar"]["train"].append(planar_decoded_hm['train'])
+            self.probe_history_hipmip["planar"]["val"].append(planar_decoded_hm['val'])
+            self.probe_history_hipmip["nexus"]["train"].append(nexus_decoded_hm['train'])
+            self.probe_history_hipmip["nexus"]["val"].append(nexus_decoded_hm['val'])
 
             output = self.model.decoders[0](forward, batch)['x_semantic']
             output_forward = output.copy()
@@ -227,36 +263,45 @@ class DynamicProbedNetwork(ProbedNetwork):
                     output_forward[plane] for _ in range(nexus_forward[plane].shape[-1])
                     ]).swapaxes(0, -1).swapaxes(0, 1)
                 for plane in self.planes}
-            output_train, output_val = self.output_training.step([output_forward],[data])
+            train, val = self.output_training_track.step([output_forward],[data])
+            self.probe_history_tracks["output"]["train"].append(train)
+            self.probe_history_tracks["output"]["val"].append(val)
 
-            self.probe_training_history["encoder"]["train"].append(encoder_train)
-            self.probe_training_history["encoder"]["val"].append(encoder_val)
-
-            self.probe_training_history["planar"]["train"].append(planar_decoded['train'])
-            self.probe_training_history["planar"]["val"].append(planar_decoded['val'])
-
-            self.probe_training_history["nexus"]["train"].append(nexus_decoded['train'])
-            self.probe_training_history["nexus"]["val"].append(nexus_decoded['val'])
-
-            self.probe_training_history["output"]["train"].append(output_train)
-            self.probe_training_history["output"]["val"].append(output_val)
+            train, val = self.output_training_hipmip.step([output_forward],[data])
+            self.probe_history_hipmip["output"]["train"].append(train)
+            self.probe_history_hipmip["output"]["val"].append(val)
 
 
     def plot_probe_training_history(self, out_path, file_name=""): 
-
         plt.close("all")
-        keys = self.probe_training_history.keys()
-        fig, subplots = plt.subplots(ncols=len(keys), sharey=True, sharex=False, figsize=(5*len(keys), 5))
+        keys = self.probe_history_tracks.keys()
+        fig, subplots = plt.subplots(nrows=2, ncols=len(keys), sharey=True, sharex=False, figsize=(5*len(keys), 10))
         
+        ylabels = ["Track identification", "Hip/Mip difference"]
         for subplot, key in enumerate(keys): 
-            
-            train = self.probe_training_history[key]['train']
-            val = self.probe_training_history[key]['val']
-            index = [i for i in range(len(self.probe_training_history[key]['train']))]
+            for col, history in enumerate([self.probe_history_tracks, self.probe_history_hipmip]):
+                train = history[key]['train']
+                val = history[key]['val']
 
-            subplots[subplot].plot(index, train, label='Train', color="blue")
-            subplots[subplot].plot(index, val, label="Val", linestyle=(5, (10, 3)), color="orange")
-            subplots[subplot].set_title(key)
+                index = [i for i in range(len(train))]
+                # handle the message passing ones 
+
+                if type(train[0]) == list: 
+                    train = np.array(train).T
+                    val = np.array(val).T
+
+                    for message_index, message_step in enumerate(train): 
+                        index = [i for i in range(len(message_step))]
+                        subplots[col, subplot].plot(index, message_step, label=f"Message Step {message_index+1}")
+                        subplots[col, subplot].plot(index, val[message_index], linestyle=(5, (10, 3)), color='k', alpha=0.6)
+
+                    subplots[col, subplot].legend()
+                else: 
+                    subplots[col, subplot].plot(index, train, label='Train', color="blue")
+                    subplots[col, subplot].plot(index, val, label="Val", linestyle=(5, (10, 3)), color="orange")
+
+                subplots[col, subplot].set_title(key)
+                subplots[col, 0].set_ylabel(ylabels[col])
 
         fig.supxlabel("Training Epoch")
         fig.supylabel("Loss")
