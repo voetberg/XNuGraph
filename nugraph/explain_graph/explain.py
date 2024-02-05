@@ -5,13 +5,11 @@ from nugraph.explain_graph.utils.load import Load
 
 from datetime import datetime 
 
-
 from torch_geometric.explain import metric as pyg_metrics
 from nugraph.explain_graph.utils import metrics 
 
-
 class ExplainLocal:
-    def __init__(self, data_path:str, out_path:str = "explainations/",checkpoint_path:str=None, batch_size:int=16, test:bool=False):
+    def __init__(self, data_path:str, out_path:str = "explainations/",checkpoint_path:str=None, batch_size:int=16, test:bool=False, n_batches:int=None):
         """
         Abstract class 
         Perform a local explaination method on a single datapoint
@@ -22,14 +20,14 @@ class ExplainLocal:
             checkpoint_path (str, optional): Checkpoint to trained model. If not supplied, creates a new model. Defaults to None.
             batch_size (int, optional): Batch size for the data loader. Defaults to 16.
         """
-        self.load = Load(data_path=data_path, checkpoint_path=checkpoint_path, batch_size=batch_size, test=test)
+        self.load = Load(data_path=data_path, checkpoint_path=checkpoint_path, batch_size=batch_size, test=test, n_batches=n_batches)
         self.data = self.load.data
         self.model = self.load.model
         self.metrics = {}
 
         self.out_path = out_path.rstrip('/')
         if not os.path.exists(self.out_path): 
-            os.makedirs(self.out_path)
+            os.makedirs(self.out_path, exist_ok=True)
         self.explainer = None
 
     def process_graph(self, graph):
@@ -94,7 +92,3 @@ class ExplainLocal:
 
         
         json.dump(self.metrics, open(f"{self.out_path}/metrics_{file_name}.json", 'w'))
-
-    def __call__(self, *args, **kwds):
-        self.inference()
-        self.save() 

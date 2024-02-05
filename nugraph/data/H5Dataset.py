@@ -14,9 +14,10 @@ class H5Dataset(Dataset):
         super().__init__(transform=transform)
         self._interface = io.H5Interface(h5py.File(filename))
         self._samples = samples
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def len(self) -> int:
         return len(self._samples)
 
     def get(self, idx: int) -> 'pyg.data.HeteroData':
-        return self._interface.load_heterodata(self._samples[idx])
+        return self._interface.load_heterodata(self._samples[idx]).to(self.device)

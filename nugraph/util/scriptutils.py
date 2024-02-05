@@ -7,7 +7,6 @@ def configure_device(cpu: bool = False):
             # query GPU information using pynvml
             nvsmi = nvidia_smi.getInstance()
             info = nvsmi.DeviceQuery('index,memory.free')['gpu']
-
             # if there aren't multiple GPUs, don't do anything
             if len(info) < 2:
                 return 'auto', 'auto'

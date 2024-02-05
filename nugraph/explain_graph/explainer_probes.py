@@ -1,3 +1,4 @@
+from typing import Optional
 from nugraph.explain_graph.utils.load import Load
 from nugraph.explain_graph.algorithms.linear_probes.probed_network import ProbedNetwork, DynamicProbedNetwork
 
@@ -13,8 +14,9 @@ class ExplainNetwork(ExplainLocal):
                  planes = ['u', 'v', 'y'],
                  message_passing_steps=5, 
                  batch_size: int = 16, 
-                 test: bool = False):
-        super().__init__(data_path, out_path, checkpoint_path, batch_size, test)
+                 test: bool = False, 
+                 n_batches:Optional[int]=None):
+        super().__init__(data_path, out_path, checkpoint_path, batch_size, test, n_batches)
         self.planes = planes
         self.message_passing_steps = message_passing_steps
         self.explainer = ProbedNetwork(model=self.model, planes=self.planes)
@@ -28,6 +30,7 @@ class ExplainNetwork(ExplainLocal):
         Impliment the explaination method
         """
         self.entropy, self.loss = self.explainer.forward(data, self.message_passing_steps)
+
 
     def _single_plot(self, plot, history, xtick_labels): 
         index = range(len(history))
@@ -90,9 +93,12 @@ class ExplainNetwork(ExplainLocal):
     
 
 class DynamicExplainNetwork(ExplainNetwork): 
-    def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, planes=['u', 'v', 'y'], message_passing_steps=5, batch_size: int = 16, test: bool = False):
-        super().__init__(data_path, out_path, checkpoint_path, planes, message_passing_steps, batch_size, test)
+    def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, planes=['u', 'v', 'y'], message_passing_steps=5, batch_size: int = 16, test: bool = False, n_batches: Optional[int]=None):
+        super().__init__(data_path, out_path, checkpoint_path, planes, message_passing_steps, batch_size, test, n_batches)
         self.explainer = DynamicProbedNetwork(model=self.model, planes=self.planes, data=self.data)
 
     def visualize(self, explaination=None, file_name="explaination_graph"):
         self.explainer.plot_probe_training_history(self.out_path, file_name)
+
+    def explain(self, data, **kwargs):
+        self.explainer.forward(data, out_path=self.out_path)

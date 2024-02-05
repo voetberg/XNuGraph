@@ -5,6 +5,8 @@ import h5py
 from nugraph.models import NuGraph2
 from nugraph.data import H5DataModule
 from nugraph import util
+
+from torch_geometric.loader import DataLoader
 from torch_geometric.data import Batch
 
 from pynuml.io import H5Interface
@@ -13,13 +15,14 @@ class Load:
     def __init__(self,
                  checkpoint_path="./paper.ckpt", 
                  data_path="/wclustre/fwk/exatrkx/data/uboone/CHEP2023/CHEP2023.gnn.h5", 
-                 batch_size=1, 
+                 batch_size=16, 
                  test=False, 
-                 planes=['u','v','y']) -> None:
+                 planes=['u','v','y'], 
+                 n_batches=None) -> None:
         if test: 
-            self.data = self.load_data("./test_data.h5", batch_size=1)
+            self.data = self.load_data("./test_data.h5", batch_size=1, n_batches=1)
         else: 
-            self.data = self.load_data(data_path, batch_size)
+            self.data = self.load_data(data_path, batch_size, n_batches)
         try: 
             self.model = self.load_checkpoint(checkpoint_path)
             
@@ -50,8 +53,11 @@ class Load:
         model.eval() 
         return model 
 
-    def load_data(self, data_path, batch_size=1): 
-        return H5DataModule(data_path, batch_size=batch_size).val_dataloader()
+    def load_data(self, data_path, batch_size=16, n_batches=None): 
+        data = H5DataModule(data_path, batch_size=batch_size).val_dataloader()
+        if n_batches is not None: 
+            data = DataLoader(data.dataset[n_batches:], batch_size=batch_size)
+        return data
     
     def load_test_data(self, data_path, batch_size=1): 
         with h5py.File(data_path, "a") as f: 

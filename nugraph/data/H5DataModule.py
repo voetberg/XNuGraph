@@ -5,7 +5,7 @@ import sys
 import h5py
 import tqdm
 
-from torch import tensor, cat
+from torch import tensor, cat, cuda
 from torch.utils.data import random_split
 from torch_geometric.loader import DataLoader
 from torch_geometric.transforms import Compose
@@ -35,6 +35,8 @@ class H5DataModule(LightningDataModule):
             sys.exit()
         self.shuffle = shuffle
         self.balance_frac = balance_frac
+
+        self.device = "cuda" if cuda.is_available() else "cpu"
 
         with h5py.File(self.filename) as f:
 
@@ -72,7 +74,7 @@ class H5DataModule(LightningDataModule):
             try:
                 norm = {}
                 for p in self.planes:
-                    norm[p] = tensor(f[f'norm/{p}'][()])
+                    norm[p] = tensor(f[f'norm/{p}'][()]).to(self.device)
             except:
                 print('Feature normalisations not found in file! Call "generate_norm" to create them.')
                 sys.exit()

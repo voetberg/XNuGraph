@@ -8,10 +8,10 @@ import torch
 from torch import Tensor
 from torch.nn.parameter import Parameter
 
-from torch_geometric.explain import Explainer, Explanation, ExplainerAlgorithm, GNNExplainer, HeteroExplanation 
+from torch_geometric.explain import Explainer, Explanation, ExplainerAlgorithm, GNNExplainer 
 from torch_geometric.data import HeteroData
 from torch_geometric.explain.config import MaskType
-from torch_geometric.typing import EdgeType, NodeType
+
 from nugraph.explain_graph.utils.load import Load
 from nugraph.explain_graph.utils.masking_utils import get_masked_graph
 
@@ -31,12 +31,12 @@ class HeteroExplainer(Explainer):
             target[plane] =torch.argmax(prediction["x_semantic"][plane].detach(), dim=-1)
         return target
 
-    def get_masked_prediction(self, graph, node_mask: Tensor | Dict[NodeType, Tensor] | None = None, edge_mask: Tensor | Dict[EdgeType, Tensor] | None = None) -> Tensor:
+    def get_masked_prediction(self, graph, node_mask, edge_mask) -> Tensor:
         masked_graph = get_masked_graph(graph, node_mask, edge_mask)
         out = self.get_prediction(graph=masked_graph)
         return out
 
-    def __call__(self, graph) -> Explanation | HeteroExplanation:
+    def __call__(self, graph):
         return self.hetero_call(graph)
 
     def hetero_call(self, graph): 
@@ -78,6 +78,7 @@ class HeteroGNNExplainer(GNNExplainer):
         super().__init__(epochs, lr, **kwargs)
         self.planes = planes
         self.loss_history = []
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def forward(self, model, graph):
         prediction = copy.deepcopy(graph)
@@ -118,12 +119,12 @@ class HeteroGNNExplainer(GNNExplainer):
 
         if node: 
             if node_mask_type == MaskType.object:
-                node_mask = Parameter(torch.randn(N, 1) * 0.1)
+                node_mask = torch.tensor(torch.randn(N, 1) * 0.1, device=self.device, requires_grad=True)
             elif node_mask_type == MaskType.attributes:
-                node_mask = Parameter(torch.randn(N, F) * 0.1)
+                node_mask = torch.tensor(torch.randn(N, F) * 0.1, device=self.device, requires_grad=True)
         if edge: 
             std = torch.nn.init.calculate_gain('relu') * math.sqrt(2.0 / (2 * N))
-            edge_mask = Parameter(torch.randn(E) * std)
+            edge_mask = torch.tensor(torch.randn(E) * std, device=self.device, requires_grad=True)
 
         parameters = []
         if node_mask is not None:
@@ -163,7 +164,7 @@ class HeteroGNNExplainer(GNNExplainer):
                 N, _ = graph[plane]['x'].size()
                 E = nexus_edge.size(1)
                 std = torch.nn.init.calculate_gain('relu') * math.sqrt(2.0 / (2 * N))
-                edge_mask = Parameter(torch.randn(E) * std)
+                edge_mask = torch.tensor(torch.randn(E) * std, device=self.device, requires_grad=True)
 
                 self.edge_mask[f"{plane}_nexus"] = edge_mask
                 self.hard_edge_mask[f"{plane}_nexus"] = torch.ones_like(edge_mask).to(bool)
