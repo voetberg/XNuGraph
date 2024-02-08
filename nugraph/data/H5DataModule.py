@@ -41,12 +41,12 @@ class H5DataModule(LightningDataModule):
         with h5py.File(self.filename) as f:
 
             # load metadata
-            try:
-                self.planes = f['planes'].asstr()[()].tolist()
-                self.semantic_classes = f['semantic_classes'].asstr()[()].tolist()
-            except:
-                print('Metadata not found in file! "planes" and "semantic_classes" are required.')
-                sys.exit()
+            assert 'planes' in f.keys(), 'Metadata not found in file! "planes" is required.'
+            self.planes = f['planes'].asstr()[()].tolist()
+            
+            assert 'semantic_classes' in f.keys(), 'Metadata not found in file! "semantic_classes" is required.'
+            self.semantic_classes = f['semantic_classes'].asstr()[()].tolist()
+
 
             # load optional event labels
             if 'event_classes' in f:
@@ -55,29 +55,23 @@ class H5DataModule(LightningDataModule):
                 self.event_classes = None
 
             # load sample splits
-            try:
-                train_samples = f['samples/train'].asstr()[()]
-                val_samples = f['samples/validation'].asstr()[()]
-                test_samples = f['samples/validation'].asstr()[()]
-            except:
-                print('Sample splits not found in file! Call "generate_samples" to create them.')
-                sys.exit()
+            assert 'samples/train' in f.keys(), 'Train sample splits not found in file! Call "generate_samples" to create them.'
+            assert 'samples/validation' in f.keys(), 'Validation sample splits not found in file! Call "generate_samples" to create them.'
+
+            train_samples = f['samples/train'].asstr()[()]
+            val_samples = f['samples/validation'].asstr()[()]
+            test_samples = f['samples/validation'].asstr()[()]
+
 
             # load data sizes
-            try:
-                self.train_datasize = f['datasize/train'][()]
-            except:
-                print('Data size array not found in file! Call "generate_samples" to create it.')
-                sys.exit()
+            assert 'datasize/train' in f.keys(), 'Data size array not found in file! Call "generate_samples" to create it.'
+            self.train_datasize = f['datasize/train'][()]
 
             # load feature normalisations
-            try:
-                norm = {}
-                for p in self.planes:
-                    norm[p] = tensor(f[f'norm/{p}'][()]).to(self.device)
-            except:
-                print('Feature normalisations not found in file! Call "generate_norm" to create them.')
-                sys.exit()
+            norm = {}
+            for p in self.planes:
+                assert f'norm/{p}' in f.keys(), 'Feature normalisations not found in file! Call "generate_norm" to create them.'
+                norm[p] = tensor(f[f'norm/{p}'][()]).to(self.device)
 
         transform = Compose((PositionFeatures(self.planes),
                              FeatureNorm(self.planes, norm)))
@@ -102,11 +96,9 @@ class H5DataModule(LightningDataModule):
             f['samples/validation'] = list(val)
             f['samples/test'] = list(test)
 
-            try:
-                planes = f['planes'].asstr()[()].tolist()
-            except:
-                print('Metadata not found in file! "planes" is required.')
-                sys.exit()
+            assert 'planes' in f.keys(), 'Metadata not found in file! "planes" is required.'
+            planes = f['planes'].asstr()[()].tolist()
+
             transform = PositionFeatures(planes)
             dataset = H5Dataset(data_path, train, transform)
             def datasize(data):
@@ -123,11 +115,8 @@ class H5DataModule(LightningDataModule):
     def generate_norm(data_path: str, batch_size: int):
         with h5py.File(data_path, 'r+') as f:
             # load plane metadata
-            try:
-                planes = f['planes'].asstr()[()].tolist()
-            except:
-                print('Metadata not found in file! "planes" is required.')
-                sys.exit()
+            assert 'planes' in f.keys(), 'Metadata not found in file! "planes" is required.'
+            planes = f['planes'].asstr()[()].tolist()
 
             loader = DataLoader(H5Dataset(data_path,
                                           list(f['dataset'].keys()),
