@@ -12,9 +12,9 @@ from nugraph.explain_graph.utils.edge_visuals import EdgeVisuals, InteractiveEdg
 import matplotlib.pyplot as plt 
 
 class GlobalGNNExplain(ExplainLocal): 
-    def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y']):
+    def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y'], n_batches=None):
         self.planes = planes
-        super().__init__(data_path, out_path, checkpoint_path, batch_size, test)
+        super().__init__(data_path, out_path, checkpoint_path, batch_size, test, n_batches=n_batches)
 
         model_config =  ModelConfig(
             mode='multiclass_classification',
@@ -59,8 +59,8 @@ class GlobalGNNExplain(ExplainLocal):
         return explaination
     
 class ClasswiseGNNExplain(GlobalGNNExplain): 
-    def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y']):
-        super().__init__(data_path, out_path, checkpoint_path, batch_size, test, planes)
+    def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y'], n_batches=None):
+        super().__init__(data_path, out_path, checkpoint_path, batch_size, test, planes, n_batches=n_batches)
         model_config =  ModelConfig(
             mode='multiclass_classification',
             task_level='node', 
@@ -68,7 +68,7 @@ class ClasswiseGNNExplain(GlobalGNNExplain):
         
         self.explainer = HeteroExplainer(
             model=self.model, 
-            algorithm=MultiEdgeHeteroGNNExplainer(epochs=300, plane=self.planes), 
+            algorithm=MultiEdgeHeteroGNNExplainer(epochs=2, plane=self.planes), 
             explanation_type='model', 
             model_config=model_config,
             node_mask_type="object",
@@ -159,8 +159,8 @@ class GNNExplainFeatures(GlobalGNNExplain):
             self._importance_plot(subgraph, file_name)
 
 class GNNExplainerPrune(GlobalGNNExplain): 
-    def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y']):
-        super().__init__(data_path, out_path, checkpoint_path, batch_size, test, planes)
+    def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y'], n_batches=None):
+        super().__init__(data_path, out_path, checkpoint_path, batch_size, test, planes, n_batches)
         model_config =  ModelConfig(
             mode='multiclass_classification',
             task_level='node', 
@@ -168,7 +168,7 @@ class GNNExplainerPrune(GlobalGNNExplain):
         
         self.explainer = HeteroExplainer(
             model=self.model, 
-            algorithm=NonTrainedHeteroGNNExplainer(epochs=50, plane=self.planes), 
+            algorithm=NonTrainedHeteroGNNExplainer(epochs=2, plane=self.planes), 
             explanation_type='model', 
             model_config=model_config,
             node_mask_type="object",

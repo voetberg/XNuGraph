@@ -3,7 +3,7 @@ import pytorch_lightning as pl
 import h5py
 
 from nugraph.models import NuGraph2
-from nugraph.data import H5DataModule
+from nugraph.data import H5DataModule, H5Dataset
 from nugraph import util
 
 from torch_geometric.loader import DataLoader
@@ -54,11 +54,16 @@ class Load:
         return model 
 
     def load_data(self, data_path, batch_size=16, n_batches=None): 
-        data = H5DataModule(data_path, batch_size=batch_size).val_dataloader()
+
+        try: 
+            data = H5DataModule(data_path, batch_size=batch_size).val_dataloader()
+        except: 
+            data = DataLoader(H5Dataset(data_path, samples=['test']),  batch_size=batch_size)
+            
         if n_batches is not None: 
             data = DataLoader(data.dataset[n_batches:], batch_size=batch_size)
-        return data
-    
+
+        return data 
     def load_test_data(self, data_path, batch_size=1): 
         with h5py.File(data_path, "a") as f: 
             data = list(f['dataset']) 
