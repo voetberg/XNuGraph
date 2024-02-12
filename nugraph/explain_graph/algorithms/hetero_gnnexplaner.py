@@ -1,12 +1,9 @@
-from typing import Dict
-
 import copy
 import tqdm
 
 import math 
 import torch
 from torch import Tensor
-from torch.nn.parameter import Parameter
 
 from torch_geometric.explain import Explainer, Explanation, ExplainerAlgorithm, GNNExplainer 
 from torch_geometric.data import HeteroData
@@ -40,7 +37,6 @@ class HeteroExplainer(Explainer):
         return self.hetero_call(graph)
 
     def hetero_call(self, graph): 
-
         prediction = self.get_prediction(graph)
         target = self.get_target(prediction)
 
@@ -82,7 +78,7 @@ class HeteroGNNExplainer(GNNExplainer):
 
     def forward(self, model, graph):
         prediction = copy.deepcopy(graph)
-
+        
         prediction = self._train(model, prediction)
 
         node_mask = {key: self._post_process_mask(
@@ -123,7 +119,7 @@ class HeteroGNNExplainer(GNNExplainer):
             elif node_mask_type == MaskType.attributes:
                 node_mask = torch.tensor(torch.randn(N, F) * 0.1, device=self.device, requires_grad=True)
         if edge: 
-            std = torch.nn.init.calculate_gain('relu') * math.sqrt(2.0 / (2 * N))
+            std = torch.nn.init.calculate_gain('relu') * math.sqrt(2.0 / (2 * N+10**(-3)))
             edge_mask = torch.tensor(torch.randn(E) * std, device=self.device, requires_grad=True)
 
         parameters = []
@@ -163,7 +159,7 @@ class HeteroGNNExplainer(GNNExplainer):
                 nexus_edge = graph[(plane, 'nexus', 'sp')]['edge_index'].to(torch.float)
                 N, _ = graph[plane]['x'].size()
                 E = nexus_edge.size(1)
-                std = torch.nn.init.calculate_gain('relu') * math.sqrt(2.0 / (2 * N))
+                std = torch.nn.init.calculate_gain('relu') * math.sqrt(2.0 / (2 * N+10**(-3)))
                 edge_mask = torch.tensor(torch.randn(E) * std, device=self.device, requires_grad=True)
 
                 self.edge_mask[f"{plane}_nexus"] = edge_mask
@@ -178,7 +174,9 @@ class HeteroGNNExplainer(GNNExplainer):
     def _train(self, model, graph, node_index=None, loss_history=None, **kwargs):
         copy_graph = copy.deepcopy(graph)
         graph.requires_grad=True
-        model.step(copy_graph) # Set the y 
+        x, plane_edge, nexus_edge, nexus, batch = Load.unpack(graph)
+        model(x, plane_edge, nexus_edge, nexus, batch) # Set the y 
+
         y = torch.concat([
                 torch.argmax(copy_graph[plane]['x_semantic'], dim=-1).to(torch.float)
                 for plane in self.planes
@@ -191,12 +189,12 @@ class HeteroGNNExplainer(GNNExplainer):
             optimizer.zero_grad()
             stepped_graph = get_masked_graph(graph, node_mask=self.node_mask, edge_mask=self.edge_mask)
 
-            model.step(stepped_graph)
+            x, plane_edge, nexus_edge, nexus, batch = Load.unpack(stepped_graph)
+            model(x, plane_edge, nexus_edge, nexus, batch) # Set the y 
             y_hat = torch.concat([
                 torch.argmax(stepped_graph[plane]['x_semantic'], dim=-1).to(torch.float)
                 for plane in self.planes
             ]).to(torch.float)
-
 
             # Match the output of the model
         

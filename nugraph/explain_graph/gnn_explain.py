@@ -1,5 +1,7 @@
+from typing import Iterable
 from nugraph.explain_graph.explain import ExplainLocal
 from nugraph.explain_graph.utils.edge_visuals import EdgeVisuals
+import json 
 
 from torch_geometric.explain import ModelConfig
 from datetime import datetime 
@@ -48,19 +50,26 @@ class GlobalGNNExplain(ExplainLocal):
         else: 
             EdgeVisuals(planes=self.planes).plot(graph=subgraph, outdir=self.out_path, file_name=f"{file_name}.png", nexus_distribution=True)
 
+        json.dump(self.metrics, open(f"{self.out_path}/metrics_{file_name}.json", 'w'))
+
     def explain(self, data):
-        graph = self.process_graph(next(iter(data))) 
+        explainations = []
+        if not isinstance(data, Iterable): 
+            data = [data]
 
-        explaination = self.explainer(graph=graph)
+        for graph in data: 
+            explaination = self.explainer(graph=graph)
+            metrics = self.calculate_metrics(explaination)
+            self.metrics[str(len(self.metrics))] = metrics
 
-        metrics = self.calculate_metrics(explaination)
-        self.metrics[str(len(self.metrics))] = metrics 
+            explainations.append(explaination)
 
-        return explaination
+        return explainations
     
 class ClasswiseGNNExplain(GlobalGNNExplain): 
     def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y'], n_batches=None):
         super().__init__(data_path, out_path, checkpoint_path, batch_size, test, planes, n_batches=n_batches)
+        self.semantic_classes = {}
         model_config =  ModelConfig(
             mode='multiclass_classification',
             task_level='node', 
@@ -68,24 +77,27 @@ class ClasswiseGNNExplain(GlobalGNNExplain):
         
         self.explainer = HeteroExplainer(
             model=self.model, 
-            algorithm=MultiEdgeHeteroGNNExplainer(epochs=2, plane=self.planes), 
+            algorithm=MultiEdgeHeteroGNNExplainer(epochs=80, plane=self.planes), 
             explanation_type='model', 
             model_config=model_config,
             node_mask_type="object",
             edge_mask_type="object",
         )
 
-    def visualize(self, explaination, file_name=None, interactive=False):
-        for key in explaination.keys(): 
-            class_file_name = file_name+str(key)
-            graph = explaination[key]
-            graph.graph.node_mask = graph.node_mask 
-            graph.graph.edge_mask = graph.edge_mask
-            super().visualize(explaination[key], class_file_name, interactive)
-        
-        self.explainer.algorithm.plot_loss(
-            f"{self.out_path.rstrip('/')}/explainer_loss.png"
-        )
+    def visualize(self, explaination, file_name, interactive=False):
+        if not isinstance(explaination, Iterable): 
+            explaination = [explaination]
+        for index, explain in enumerate(explaination): 
+            for key in explain.keys(): 
+                class_file_name = f"{file_name}_{index}_{key}"
+                graph = explain[key]
+                graph.graph.node_mask = graph.node_mask 
+                graph.graph.edge_mask = graph.edge_mask
+                super().visualize(explain[key], class_file_name, interactive)
+            
+            self.explainer.algorithm.plot_loss(
+                f"{self.out_path.rstrip('/')}/explainer_loss.png"
+            )
     
     def calculate_metrics(self, explainations):
         metrics = {}
@@ -175,11 +187,9 @@ class GNNExplainerPrune(GlobalGNNExplain):
         )
 
     def explain(self, data):
-            graph = self.process_graph(next(iter(data))) 
+        explaination = self.explainer(graph=data)
+        return explaination
 
-            explaination = self.explainer(graph=graph)
-            return explaination
-    
     def get_explaination_subgraph(self, explaination):
         edge_mask = explaination['edge_mask']
         masked_graph = get_masked_graph(

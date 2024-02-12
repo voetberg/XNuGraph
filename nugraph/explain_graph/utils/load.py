@@ -19,6 +19,8 @@ class Load:
                  test=False, 
                  planes=['u','v','y'], 
                  n_batches=None) -> None:
+        
+        self.planes = planes
         if test: 
             self.data = self.load_data("./test_data.h5", batch_size=1, n_batches=1)
         else: 
@@ -30,7 +32,6 @@ class Load:
             print(e)
             print("Could not load checkpoint, using an untrained network")
             self.model = NuGraph2()
-        self.planes = planes
         #self.predictions = self.make_predictions()
 
     def load_checkpoint(self, checkpoint_path, graph=NuGraph2): 
@@ -52,6 +53,14 @@ class Load:
                 map_location=torch.device('cpu'))
         model.eval() 
         return model 
+    
+    def single_graphs(self, dataset, graph_index):
+        batches = dataset.collect('batch')
+        nodes = {}
+        for batch in batches: 
+            nodes[batch] = batches[batch]==graph_index
+        graph = dataset.subgraph(nodes)
+        return graph
 
     def load_data(self, data_path, batch_size=16, n_batches=None): 
 
@@ -59,11 +68,14 @@ class Load:
             data = H5DataModule(data_path, batch_size=batch_size).val_dataloader()
         except: 
             data = DataLoader(H5Dataset(data_path, samples=['test']),  batch_size=batch_size)
-            
+
         if n_batches is not None: 
             data = DataLoader(data.dataset[n_batches:], batch_size=batch_size)
 
-        return data 
+        indices = data.dataset[0].collect('batch')['u'].unique() 
+        batches = [self.single_graphs(data.dataset[0], index) for index in indices]
+        return batches 
+
     def load_test_data(self, data_path, batch_size=1): 
         with h5py.File(data_path, "a") as f: 
             data = list(f['dataset']) 

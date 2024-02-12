@@ -4,7 +4,7 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 from nugraph.explain_graph.explainer_probes import ExplainNetwork, DynamicExplainNetwork
 from nugraph.explain_graph.gnn_explain import GlobalGNNExplain, ClasswiseGNNExplain, GNNExplainFeatures,  GNNExplainerPrune
 import argparse
-
+from datetime import datetime
 explainations = {
     "GNNExplainer":GlobalGNNExplain, 
     "ProbeExplainer": ExplainNetwork,
@@ -32,9 +32,9 @@ def configure():
     return parser.parse_args()
 
 def run_explaination(checkpoint, algorithm, outfile, data_path, batch_size, test, interactive, n_batches): 
-    file_name = None
+    file_name = str(datetime.now().timestamp())
+    outfile = f"{outfile.rstrip('/')}/{algorithm}/"
     if test: 
-        outfile = f"{outfile.rstrip('/')}/explainer_test/"
         file_name = "test"
 
     explain = explainations[algorithm](
@@ -44,7 +44,7 @@ def run_explaination(checkpoint, algorithm, outfile, data_path, batch_size, test
         batch_size=batch_size, 
         test=test, 
         n_batches=n_batches)
-    
+
     e = explain.explain(explain.data)
     explain.visualize(e, file_name=file_name)
 

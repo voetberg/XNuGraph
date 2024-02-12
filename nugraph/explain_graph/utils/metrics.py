@@ -47,7 +47,7 @@ def fidelity(explainer, explaionation):
     for plane in node_mask.keys(): 
         pad_compliment = torch.nn.functional.pad(complement_y_hat[plane], (0, len(y[plane]) - len(complement_y_hat[plane])), value=None)
         pad_explain = torch.nn.functional.pad(explain_y_hat[plane], (0, len(y[plane]) - len(explain_y_hat[plane])), value=None)
-        pos_fidelity[plane] = 1. - (pad_compliment == y[plane]).float().mean().item()
-        neg_fidelity[plane] = 1. - (pad_explain == y[plane]).float().mean().item()
+        pos_fidelity[plane] = 1. - (pad_compliment == y[plane]).float().mean().item() + 10**(-6)
+        neg_fidelity[plane] = (1. - (pad_explain == y[plane]).float().mean().item()) + 10**(-6)
 
     return pos_fidelity, neg_fidelity
