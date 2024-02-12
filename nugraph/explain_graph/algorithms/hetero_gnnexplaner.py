@@ -77,7 +77,7 @@ class HeteroGNNExplainer(GNNExplainer):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def forward(self, model, graph):
-        prediction = copy.deepcopy(graph)
+        prediction = copy.deepcopy(graph).to(self.device)
         
         prediction = self._train(model, prediction)
 
@@ -172,9 +172,9 @@ class HeteroGNNExplainer(GNNExplainer):
     
 
     def _train(self, model, graph, node_index=None, loss_history=None, **kwargs):
-        copy_graph = copy.deepcopy(graph)
+        copy_graph = copy.deepcopy(graph).to(self.device)
         graph.requires_grad=True
-        x, plane_edge, nexus_edge, nexus, batch = Load.unpack(graph)
+        x, plane_edge, nexus_edge, nexus, batch = Load.unpack(graph.to(self.device))
         model(x, plane_edge, nexus_edge, nexus, batch) # Set the y 
 
         y = torch.concat([
@@ -187,7 +187,7 @@ class HeteroGNNExplainer(GNNExplainer):
  
         for i in tqdm.tqdm(range(self.epochs)):
             optimizer.zero_grad()
-            stepped_graph = get_masked_graph(graph, node_mask=self.node_mask, edge_mask=self.edge_mask)
+            stepped_graph = get_masked_graph(graph, node_mask=self.node_mask, edge_mask=self.edge_mask).to(self.device)
 
             x, plane_edge, nexus_edge, nexus, batch = Load.unpack(stepped_graph)
             model(x, plane_edge, nexus_edge, nexus, batch) # Set the y 

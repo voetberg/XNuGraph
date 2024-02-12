@@ -2,9 +2,9 @@
 set -e 
 
 checkpoint=/wclustre/fwk/exatrkx/data/uboone/CHEP2023/paper.ckpt
-algorithm=DynamicProbeExplainer
-outfile=/wclustre/fwk/exatrkx/data/uboone/CHEP2023/XNuGraph/dynamic_probe
-data_path=/wclustre/fwk/exatrkx/data/uboone/CHEP2023/CHEP2023.gnn.h5
+algorithm=GNNExplainEdges
+outfile=/wclustre/fwk/exatrkx/data/uboone/CHEP2023/XNuGraph/edge_explain
+data_path=/wclustre/fwk/exatrkx/data/uboone/CHEP2023/XNuGraph/analysis_subset.h5
 n_batches=10
 batch_size=16
 conda_env=/work1/fwk/maggiev/miniforge3/bin

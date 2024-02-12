@@ -70,8 +70,8 @@ def apply_predefined_mask(graph, node_mask, edge_mask, nexus_edge_mask, planes):
         new_index = torch.arange(len(old_index)).tolist()
         index_map = dict(zip(old_index, new_index))
 
-        edges = graph[(plane, "plane", plane)]['edge_index'][:,edge_mask[plane]].apply_(index_map.get)
-        edges_nexus = graph[(plane, 'nexus', 'sp')]['edge_index'][:,nexus_edge_mask[plane]].apply_(index_map.get)
+        edges = graph[(plane, "plane", plane)]['edge_index'][:,edge_mask[plane]].cpu().apply_(index_map.get)
+        edges_nexus = graph[(plane, 'nexus', 'sp')]['edge_index'][:,nexus_edge_mask[plane]].cpu().apply_(index_map.get)
         
         masked_graph[(plane, "plane", plane)]['edge_index'] = edges
         masked_graph[(plane, 'nexus', 'sp')]['edge_index'] = edges_nexus
