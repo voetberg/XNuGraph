@@ -1,3 +1,4 @@
+from copy import deepcopy
 import matplotlib.pyplot as plt
 import networkx as nx
 import plotly.graph_objects as go
@@ -8,6 +9,7 @@ import math
 
 import matplotlib.colors as colors
 import matplotlib.cm as cmx
+from torch_geometric.utils import from_networkx
 
 # Common 
 
@@ -41,7 +43,7 @@ def make_subgraph_kx(graph, plane, semantic_classes=None):
 def extract_edge_weights(graph, plane, return_value=False, cmap='viridis'): 
 
     weights = [1 for _ in range(len(graph[(plane, "plane", plane)]))]
-    weight_colors = 'grey'
+    weight_colors = 'cornflowerblue'
 
     if "edge_mask" in graph.keys: 
         weights = graph["edge_mask"][plane]
@@ -68,6 +70,18 @@ def extract_node_weights(graph, plane, node_field='node_mask', scale=True):
         node_size = [2 for _ in range(len(graph[plane]['x']))]
 
     return node_size
+
+
+def extract_class_subgraphs(graph, planes, class_index): 
+
+    labels = graph.collect("y_semantic")
+    nodes = {}
+    for plane in planes: 
+        nodes[plane] = labels[plane]==class_index
+
+    subgraph = graph.subgraph(nodes)
+    return subgraph
+
 
 class EdgeVisuals: 
 
@@ -98,10 +112,28 @@ class EdgeVisuals:
               nodelist=node_list, 
               edgelist=edge_list, 
               width=5, 
-              node_color='black',
+              node_color='red',
               node_size=3,
               edge_color=weight_colors,
               ax=axes) 
+        
+        return drawn_plot
+    
+    def draw_ghost_plot(self, graph, plane, axes): 
+        subgraph = make_subgraph_kx(graph, plane=plane)
+        position = {node: graph[plane]['pos'][node].tolist() for node in subgraph.nodes}
+
+        drawn_plot = nx.draw_networkx(
+            subgraph,
+              pos=position, 
+              with_labels=False,  
+              width=1, 
+              node_color='black',
+              node_size=2,
+              edge_color="grey",
+              alpha=0.2,
+              ax=axes)
+        
         return drawn_plot
     
     def plot_nexus_weights(self, graph, plot): 
@@ -119,8 +151,30 @@ class EdgeVisuals:
         plot.set_title("Nexus Weight Importance")
         plot.legend()
 
+    def _single_plot(self, graph, ghost_plot, subplots, nexus_distribution): 
+        if ghost_plot is None: 
+            ghost_plot = graph 
 
-    def plot(self, graph=None, title="", outdir=".", file_name="prediction_plot.png", nexus_distribution=False): 
+        for plane, subplot in zip(self.planes, subplots): 
+            self.draw_ghost_plot(ghost_plot, plane, axes=subplot)
+
+            subgraph = make_subgraph_kx(graph, plane=plane)
+            node_list = subgraph.nodes 
+
+            self.plot_graph(graph, subgraph, plane, node_list, subplot)
+            subplot.set_title(plane)
+
+        if nexus_distribution: 
+            self.plot_nexus_weights(graph, subplots[-1])
+
+        plt.colorbar(
+            cmx.ScalarMappable(
+                norm=colors.Normalize(vmin=0, vmax=1), 
+                cmap=plt.get_cmap(self.cmap)), 
+            ax=subplots.tolist())
+
+
+    def plot(self, graph=None, title="", outdir=".", file_name="prediction_plot.png", ghost_plot=None, nexus_distribution=False, class_plot=False): 
         """_summary_
 
         Args:
@@ -133,35 +187,38 @@ class EdgeVisuals:
             outdir (str, optional): _description_. Defaults to ".".
             file_name (str, optional): _description_. Defaults to "prediction_plot.png".
         """
+
         n_xplot = len(self.planes) + int(nexus_distribution)
+        n_yplot = 1 if not class_plot else len(self.semantic_classes)
+        figure, subplots = plt.subplots(n_yplot, n_xplot, figsize=(6*n_xplot, 8*n_yplot), sharex="col")
+        if ghost_plot is None: 
+            ghost_plot = graph 
 
-        figure, subplots = plt.subplots(1, n_xplot, figsize=( 10*n_xplot, 10))#, sharex=True, sharey=True)
-
-        for plane, subplot in zip(self.planes, subplots): 
-
-            subgraph = make_subgraph_kx(graph, plane=plane)
-            node_list = subgraph.nodes 
-
-            self.plot_graph(graph, subgraph, plane, node_list, subplot)
-            subplot.set_title(plane)
-
-        if nexus_distribution: 
-            self.plot_nexus_weights(graph, subplots[-1])
-
+        if class_plot: 
+            self._plot_classes(graph, ghost_plot, subplots)
+        else: 
+            self._single_plot(graph, ghost_plot, subplots, nexus_distribution)
 
         figure.supxlabel("wire")
         figure.supylabel("time")
         figure.suptitle(title)
 
-        plt.colorbar(
-            cmx.ScalarMappable(
-                norm=colors.Normalize(vmin=0, vmax=1), 
-                cmap=plt.get_cmap(self.cmap)), 
-            ax=subplots.tolist())
-
         plt.savefig(f"{outdir.rstrip('/')}/{file_name}")
 
+    def _plot_classes(self, graph, ghost_plot, subplots): 
+        if ghost_plot is None: 
+            ghost_plot = deepcopy(graph)
+
+        if type(graph) != list: 
+            graph = [extract_class_subgraphs(graph, self.planes, class_index) for class_index in range(len(self.semantic_classes))]
         
+        for class_index, class_label in enumerate(self.semantic_classes): 
+            subplot_row = subplots[class_index,:]
+            subplot_row[0].set_ylabel(class_label)
+            class_graph = graph[class_index]
+            self._single_plot(class_graph, ghost_plot, subplot_row, nexus_distribution=False)
+
+
 class InteractiveEdgeVisuals: 
     def __init__(self, 
                  plane, 
@@ -280,10 +337,4 @@ class InteractiveEdgeVisuals:
             
         )
         fig.write_html(f"{outdir.rstrip('/')}/{file_name}.html")
-
-
-if __name__=='__main__': 
-    vis = EdgeVisuals(test=True)
-    vis.plot(incorrect_items=False)
-
 

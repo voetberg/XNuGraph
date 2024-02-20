@@ -47,9 +47,7 @@ class HeteroExplainer(Explainer):
             self.model,
             graph
         )
-
-        #self.model.train(training)
- 
+        print(explanation)
         # Add explainer objectives to the `Explanation` object:
         if type(explanation) == dict: 
             for key in explanation.keys(): 
@@ -66,7 +64,8 @@ class HeteroExplainer(Explainer):
             explanation.prediction = prediction
             explanation.target = target
             explanation.graph = graph
-            return explanation.threshold(self.threshold_config)
+            thresholded = explanation.threshold(self.threshold_config)
+            return thresholded
 
 
 class HeteroGNNExplainer(GNNExplainer): 
@@ -78,7 +77,6 @@ class HeteroGNNExplainer(GNNExplainer):
 
     def forward(self, model, graph):
         prediction = copy.deepcopy(graph).to(self.device)
-        
         prediction = self._train(model, prediction)
 
         node_mask = {key: self._post_process_mask(
@@ -172,13 +170,12 @@ class HeteroGNNExplainer(GNNExplainer):
     
 
     def _train(self, model, graph, node_index=None, loss_history=None, **kwargs):
-        copy_graph = copy.deepcopy(graph).to(self.device)
+        copy_graph = copy.deepcopy(graph)
         graph.requires_grad=True
-        x, plane_edge, nexus_edge, nexus, batch = Load.unpack(graph.to(self.device))
-        model(x, plane_edge, nexus_edge, nexus, batch) # Set the y 
+        model.step(graph.to(self.device)) # Set the y 
 
         y = torch.concat([
-                torch.argmax(copy_graph[plane]['x_semantic'], dim=-1).to(torch.float)
+                torch.argmax(graph[plane]['x_semantic'], dim=-1).to(torch.float)
                 for plane in self.planes
                 ]).to(torch.float)
         
@@ -187,10 +184,9 @@ class HeteroGNNExplainer(GNNExplainer):
  
         for i in tqdm.tqdm(range(self.epochs)):
             optimizer.zero_grad()
-            stepped_graph = get_masked_graph(graph, node_mask=self.node_mask, edge_mask=self.edge_mask).to(self.device)
+            stepped_graph = get_masked_graph(copy_graph, node_mask=self.node_mask, edge_mask=self.edge_mask).to(self.device)
 
-            x, plane_edge, nexus_edge, nexus, batch = Load.unpack(stepped_graph)
-            model(x, plane_edge, nexus_edge, nexus, batch) # Set the y 
+            model.step(stepped_graph) # Set the y 
             y_hat = torch.concat([
                 torch.argmax(stepped_graph[plane]['x_semantic'], dim=-1).to(torch.float)
                 for plane in self.planes
@@ -252,9 +248,12 @@ class HeteroGNNExplainer(GNNExplainer):
         return m_node, m_edge
 
 
+    def _classification_loss(self, y_hat, y):
+        return self._loss_multiclass_classification(y_hat, y)
+
     def _loss(self, y_hat, y): 
 
-        loss = self._loss_multiclass_classification(y_hat, y)
+        loss = self._classification_loss(y_hat, y)
         m_node, m_edge = self.get_nexus_m()
 
         edge_reduce = getattr(torch, self.coeffs['edge_reduction'])

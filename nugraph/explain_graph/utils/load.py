@@ -19,10 +19,10 @@ class Load:
                  test=False, 
                  planes=['u','v','y'], 
                  n_batches=None) -> None:
-        
+        self.test = test
         self.planes = planes
         if test: 
-            self.data = self.load_data("./test_data.h5", batch_size=1, n_batches=1)
+            self.data = self.load_data("./test_data.h5", batch_size=1)
         else: 
             self.data = self.load_data(data_path, batch_size, n_batches)
         try: 
@@ -63,7 +63,6 @@ class Load:
         return graph
 
     def load_data(self, data_path, batch_size=16, n_batches=None): 
-
         try: 
             data = H5DataModule(data_path, batch_size=batch_size).val_dataloader()
         except: 
@@ -72,9 +71,15 @@ class Load:
         if n_batches is not None: 
             data = DataLoader(data.dataset[n_batches:], batch_size=batch_size)
 
-        indices = data.dataset[0].collect('batch')['u'].unique() 
-        batches = [self.single_graphs(data.dataset[0], index) for index in indices]
-        return batches 
+        if not self.test: 
+            if "batch" in data.dataset[0]['u'].keys(): 
+                indices = data.dataset[0].collect('batch')['u'].unique() 
+                batches = [self.single_graphs(data.dataset[0], index) for index in indices]
+                return batches 
+            else: 
+                raise KeyError("No batches Found")
+        else: 
+            return data.dataset
 
     def load_test_data(self, data_path, batch_size=1): 
         with h5py.File(data_path, "a") as f: 
@@ -88,10 +93,10 @@ class Load:
 
             f.close()
         try:
-            dataset = H5DataModule(data_path, batch_size).val_dataloader()
+            dataset = H5DataModule(data_path, batch_size).test_dataloader()
         except: 
             H5DataModule.generate_norm(data_path, batch_size)
-            dataset = H5DataModule(data_path, batch_size).val_dataloader()
+            dataset = H5DataModule(data_path, batch_size).test_dataloader()
 
         return dataset
 
@@ -107,13 +112,14 @@ class Load:
                 { p: data_batch[p, 'plane', p].edge_index for p in planes }, 
                 { p: data_batch[p, 'nexus', 'sp'].edge_index for p in planes }, 
                 torch.empty(data_batch['sp'].num_nodes, 0), 
-                { p: data_batch[p].batch for p in planes }
+                { p: data_batch[p].get('batch',torch.empty(data_batch['sp'].num_nodes, 0)) for p in planes }
                 )
 
     def make_predictions(self): 
         accelerator, device = util.configure_device()
         trainer = pl.Trainer(accelerator=accelerator,
-                            logger=False)
+                            logger=False, 
+                            devices=[device])
         predictions = trainer.predict(self.model, dataloaders=self.data)
         return predictions
     
@@ -129,10 +135,3 @@ class Load:
             f["semantic_classes"] = ['MIP','HIP','shower','michel','diffuse']
 
         f.close()
-
-# if __name__ == "__main__": 
-#     Load(test=True, batch_size=64).save_mini_batch()
-
-#     #H5DataModule.generate_samples("./test_data.h5")#, batch_size=16)
-#     H5Interface("./test_data.h5").load_heterodata("validation")
-

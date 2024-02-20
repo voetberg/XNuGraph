@@ -15,14 +15,14 @@ class MaskStrats:
         return edges, edges_nexus
 
     @staticmethod
-    def top_quartile(graph: HeteroData, edge_weights:torch.Tensor, nexus_edge_weights:torch.Tensor, plane:str): 
+    def top_percentile(graph, edge_weights, nexus_edge_weights, plane, percentile): 
         try: 
-            edge_index = torch.where(edge_weights>edge_weights.quantile(0.25))[0]
+            edge_index = torch.where(edge_weights>edge_weights.quantile(1-percentile))[0]
             
         except RuntimeError: 
             edge_index = []
         try: 
-            edge_nexus_index = torch.where(nexus_edge_weights>nexus_edge_weights.quantile(0.25))[0]
+            edge_nexus_index = torch.where(nexus_edge_weights>nexus_edge_weights.quantile(1-percentile))[0]
         except RuntimeError: 
             edge_nexus_index = []
 
@@ -30,6 +30,15 @@ class MaskStrats:
         edges_nexus = graph[(plane, 'nexus', 'sp')]['edge_index'][:, edge_nexus_index]
         return edges, edges_nexus
 
+
+
+    @staticmethod
+    def top_quartile(graph: HeteroData, edge_weights:torch.Tensor, nexus_edge_weights:torch.Tensor, plane:str): 
+        return MaskStrats.top_percentile(graph, edge_weights, nexus_edge_weights, plane, percentile=0.25)
+
+    @staticmethod
+    def top_tenth(graph: HeteroData, edge_weights:torch.Tensor, nexus_edge_weights:torch.Tensor, plane:str): 
+        return MaskStrats.top_percentile(graph, edge_weights, nexus_edge_weights, plane, percentile=0.1)
 
 def get_masked_graph(graph:HeteroData, node_mask:dict, edge_mask:dict, mask_strategy: MaskStrats=MaskStrats.top_quartile, planes:list[str]=['u', 'v', 'y']): 
 

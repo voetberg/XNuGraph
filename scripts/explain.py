@@ -5,11 +5,12 @@ from nugraph.explain_graph.explainer_probes import ExplainNetwork, DynamicExplai
 from nugraph.explain_graph.gnn_explain import GlobalGNNExplain, ClasswiseGNNExplain, GNNExplainFeatures,  GNNExplainerPrune
 import argparse
 from datetime import datetime
+
 explainations = {
     "GNNExplainer":GlobalGNNExplain, 
     "ProbeExplainer": ExplainNetwork,
     "GNNFeatures": GNNExplainFeatures,
-    "GNNExplainEdges": ClasswiseGNNExplain, 
+    "GNNExplainClass": ClasswiseGNNExplain, 
     "DynamicProbeExplainer": DynamicExplainNetwork,
     "GNNExplainerPrune": GNNExplainerPrune
 }

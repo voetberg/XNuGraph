@@ -375,7 +375,6 @@ class TrainProbes:
         self.optimizer = torch.optim.SGD(params = self.probe.decoder.parameters(), lr=0.01)
 
     def loss(self, x, labels): 
-        #labels = Batch.from_data_list([datum for datum in labels])
         prediction = self.probe.forward(x[0])
         loss = self.loss_function(prediction, labels[0])
         return loss

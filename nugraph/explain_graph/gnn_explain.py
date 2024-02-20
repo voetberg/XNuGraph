@@ -6,16 +6,20 @@ import json
 from torch_geometric.explain import ModelConfig
 from datetime import datetime 
 from nugraph.explain_graph.algorithms.hetero_gnnexplaner import HeteroGNNExplainer, HeteroExplainer
-from nugraph.explain_graph.algorithms.multi_edge_hetero_gnnexplainer import MultiEdgeHeteroGNNExplainer
-from nugraph.explain_graph.algorithms.non_trained_hetero_gnn_explainer import NonTrainedHeteroGNNExplainer
-from nugraph.explain_graph.utils.masking_utils import get_masked_graph
+from nugraph.explain_graph.class_hetero_gnnexplainer import MultiEdgeHeteroGNNExplainer
+from nugraph.explain_graph.algorithms.prune_gnn_explainer import NonTrainedHeteroGNNExplainer
+from nugraph.explain_graph.utils.masking_utils import get_masked_graph, MaskStrats
 from nugraph.explain_graph.utils.edge_visuals import EdgeVisuals, InteractiveEdgeVisuals, make_subgraph_kx
 
 import matplotlib.pyplot as plt 
+import h5py 
 
 class GlobalGNNExplain(ExplainLocal): 
     def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y'], n_batches=None):
         self.planes = planes
+        self.explainations = []
+        self.masking_strat = MaskStrats.top_quartile
+
         super().__init__(data_path, out_path, checkpoint_path, batch_size, test, n_batches=n_batches)
 
         model_config =  ModelConfig(
@@ -36,7 +40,7 @@ class GlobalGNNExplain(ExplainLocal):
         node_mask = explaination['node_mask']
         edge_mask = explaination['edge_mask']
         return get_masked_graph(
-            explaination['graph'], node_mask, edge_mask, planes=self.planes
+            explaination['graph'], node_mask, edge_mask, planes=self.planes, mask_strategy=self.masking_strat
         )
     
     def visualize(self, explaination, file_name=None, interactive=False):
@@ -53,8 +57,9 @@ class GlobalGNNExplain(ExplainLocal):
         json.dump(self.metrics, open(f"{self.out_path}/metrics_{file_name}.json", 'w'))
 
     def explain(self, data):
-        explainations = []
-        if not isinstance(data, Iterable): 
+        try:
+            len(data)
+        except: 
             data = [data]
 
         for graph in data: 
@@ -62,9 +67,17 @@ class GlobalGNNExplain(ExplainLocal):
             metrics = self.calculate_metrics(explaination)
             self.metrics[str(len(self.metrics))] = metrics
 
-            explainations.append(explaination)
+            self.explainations.append(explaination)
 
-        return explainations
+        return self.explainations
+    
+    def save(self, file_name: str = None):
+        super().save(file_name)
+
+        with h5py.File(f"{self.out_path}/{file_name}.h5", 'w') as f: 
+            f.create_dataset(name="results", data=self.explainations)
+            
+        f.close()
     
 class ClasswiseGNNExplain(GlobalGNNExplain): 
     def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y'], n_batches=None):
@@ -77,28 +90,44 @@ class ClasswiseGNNExplain(GlobalGNNExplain):
         
         self.explainer = HeteroExplainer(
             model=self.model, 
-            algorithm=MultiEdgeHeteroGNNExplainer(epochs=80, plane=self.planes), 
+            algorithm=MultiEdgeHeteroGNNExplainer(epochs=60, plane=self.planes), 
             explanation_type='model', 
             model_config=model_config,
             node_mask_type="object",
             edge_mask_type="object",
         )
 
-    def visualize(self, explaination, file_name, interactive=False):
+    def visualize(self, explaination, file_name):
+        if file_name is None: 
+            file_name = f"subgraph_{datetime.now().timestamp().split('.')[-1]}"
+
         if not isinstance(explaination, Iterable): 
             explaination = [explaination]
+
         for index, explain in enumerate(explaination): 
-            for key in explain.keys(): 
-                class_file_name = f"{file_name}_{index}_{key}"
-                graph = explain[key]
-                graph.graph.node_mask = graph.node_mask 
-                graph.graph.edge_mask = graph.edge_mask
-                super().visualize(explain[key], class_file_name, interactive)
+            # Combine them all into one graph for the visuals
+            subgraphs = []
+            for class_index, sub_explain in explain.items(): 
+                subgraph = self.get_explaination_subgraph(explaination=sub_explain)
+
+                subgraph['node_mask'] = explain[class_index]['node_mask']
+                subgraph['edge_mask'] = explain[class_index]['edge_mask']
+                subgraphs.append(subgraph)
+
+            graph = explain[list(explain.keys())[0]]['graph']
+            
+            EdgeVisuals(planes=self.planes).plot(
+                graph=subgraphs, 
+                ghost_plot=graph, 
+                outdir=self.out_path, 
+                file_name=f"{file_name}_{index}.png", 
+                nexus_distribution=False, 
+                class_plot=True)
             
             self.explainer.algorithm.plot_loss(
                 f"{self.out_path.rstrip('/')}/explainer_loss.png"
             )
-    
+
     def calculate_metrics(self, explainations):
         metrics = {}
         for key in explainations: 
@@ -170,6 +199,7 @@ class GNNExplainFeatures(GlobalGNNExplain):
             subgraph = self.get_explaination_subgraph(explaination)
             self._importance_plot(subgraph, file_name)
 
+
 class GNNExplainerPrune(GlobalGNNExplain): 
     def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y'], n_batches=None):
         super().__init__(data_path, out_path, checkpoint_path, batch_size, test, planes, n_batches)
@@ -180,7 +210,7 @@ class GNNExplainerPrune(GlobalGNNExplain):
         
         self.explainer = HeteroExplainer(
             model=self.model, 
-            algorithm=NonTrainedHeteroGNNExplainer(epochs=2, plane=self.planes), 
+            algorithm=NonTrainedHeteroGNNExplainer(epochs=60, plane=self.planes), 
             explanation_type='model', 
             model_config=model_config,
             node_mask_type="object",
