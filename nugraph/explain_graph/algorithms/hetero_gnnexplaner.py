@@ -47,7 +47,6 @@ class HeteroExplainer(Explainer):
             self.model,
             graph
         )
-        print(explanation)
         # Add explainer objectives to the `Explanation` object:
         if type(explanation) == dict: 
             for key in explanation.keys(): 

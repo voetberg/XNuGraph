@@ -1,4 +1,6 @@
 from copy import deepcopy
+
+import numpy as np
 import matplotlib.pyplot as plt
 import networkx as nx
 import plotly.graph_objects as go
@@ -9,7 +11,6 @@ import math
 
 import matplotlib.colors as colors
 import matplotlib.cm as cmx
-from torch_geometric.utils import from_networkx
 
 # Common 
 
@@ -40,19 +41,43 @@ def make_subgraph_kx(graph, plane, semantic_classes=None):
     else: 
         return subgraph_nx
     
-def extract_edge_weights(graph, plane, return_value=False, cmap='viridis'): 
+def extract_plane_subgraph(graph, plane): 
+    subgraph = graph[plane]
+    subgraph[(plane, 'plane', plane)] = {"edge_index": graph[(plane, 'plane', plane)]['edge_index']}
+    subgraph[(plane, 'nexus', "sp")] = {"edge_index": graph[(plane, 'nexus', "sp")]['edge_index']}
+    return subgraph
+
+
+def extract_edge_weights(graph, plane, return_value=False, cmap='viridis', nexus=False): 
 
     weights = [1 for _ in range(len(graph[(plane, "plane", plane)]))]
+    from_graph = False 
+    
+
     weight_colors = 'cornflowerblue'
-
     if "edge_mask" in graph.keys: 
-        weights = graph["edge_mask"][plane]
-        if weights.numel() != 0: 
-            weights = (weights - weights.min())/(weights.max() - weights.min())
+        if not nexus: 
+            plane_name = plane 
+        else: 
+            plane_name = f"{plane}_nexus"
+        weights = graph["edge_mask"][plane_name]
+        from_graph=True 
 
-            cNorm  = colors.Normalize(vmin=0, vmax=weights.max())
-            color_map = cmx.ScalarMappable(norm=cNorm, cmap=plt.get_cmap(cmap))
-            weight_colors = [color_map.to_rgba(weight) for weight in weights]
+    # edge_attr is more acturate for picking mask shapes
+        if not nexus: 
+            plane_name = plane 
+        else: 
+            plane_name = "sp"
+    if hasattr(graph[plane, plane_name], "edge_attr"): 
+        weights = graph[plane, plane_name].edge_attr
+        from_graph = True
+
+    if (weights.numel() != 0) and from_graph: 
+        weights = (weights - weights.min())/(weights.max() - weights.min())
+
+        cNorm  = colors.Normalize(vmin=0, vmax=weights.max())
+        color_map = cmx.ScalarMappable(norm=cNorm, cmap=plt.get_cmap(cmap))
+        weight_colors = [color_map.to_rgba(weight) for weight in weights]
 
     
     if return_value: 
@@ -73,6 +98,10 @@ def extract_node_weights(graph, plane, node_field='node_mask', scale=True):
 
 
 def extract_class_subgraphs(graph, planes, class_index): 
+    if "edge_mask" in graph.keys: 
+        for plane in planes: 
+            graph[plane, plane].edge_attr = graph['edge_mask'][plane]
+            graph[plane, "sp"].edge_attr = graph['edge_mask'][f'{plane}_nexus']
 
     labels = graph.collect("y_semantic")
     nodes = {}
@@ -338,3 +367,169 @@ class InteractiveEdgeVisuals:
         )
         fig.write_html(f"{outdir.rstrip('/')}/{file_name}.html")
 
+
+class EdgeLengthDistribution: 
+    def __init__(self, 
+                 out_path=".", 
+                 include_nexus=True, 
+                 planes=['u', 'v', 'y'], 
+                 semantic_classes=['MIP','HIP','shower','michel','diffuse'], 
+                 percentile=0.3) -> None:
+
+        self.out_path = out_path
+        self.include_nexus = include_nexus
+
+        self.planes = planes
+        self.semantic_classes = semantic_classes
+        self.percentile = percentile
+
+    def distance(self, x, y): 
+        return np.linalg.norm(np.subtract(x, y))
+    
+    def _extract_length(self, graph):
+        try: 
+            positions = graph.collect('pos')
+            edges =  graph.collect('edge_index')
+        except AttributeError: 
+            graph = graph[0]
+            positions = graph.collect('pos')
+            edges =  graph.collect('edge_index')
+
+        edge_lengths = {}
+        for plane in self.planes: 
+            position = positions[plane]
+            plane_edges = edges[(plane, "plane", plane)]
+   
+            edge_positions = [
+                (position[plane_edges[0][edge_index]], position[plane_edges[1][edge_index]])
+                for edge_index in range(len(plane_edges[0]))]
+
+            edge_lengths[plane] = torch.tensor([self.distance(edge_1, edge_2) for edge_1, edge_2 in edge_positions])
+        return edge_lengths
+
+    def plot(self, graph, style="scatter", split="class", file_name="plot.png",): 
+        """
+        """
+        n_rows = {"class":1, "plane": 1, "all": len(self.planes),  "none": 1}[split]
+        n_cols = {"class": len(self.semantic_classes), "plane": len(self.planes), "all": len(self.semantic_classes),  "none": 1}[split]
+
+        figure, subplots = plt.subplots(nrows=n_rows, ncols=n_cols, figsize=(6*n_cols, 6*n_rows))
+
+        {
+            "class": self._plot_classwise, 
+            "plane": self._plot_planewise, 
+            "all": self._plot_all_seperate, 
+            "none": self._plot_all_together
+        }[split](graph, style, subplots)
+
+        figure.suptitle(split)
+        if style == "scatter": 
+            figure.supylabel("Importance")
+            figure.supxlabel("Edge Length")
+        elif style == "histogram": 
+            figure.supxlabel("Importance")
+
+        plt.savefig(f"{self.out_path.rstrip('/')}/{file_name}")
+
+
+    def _plot_classwise(self, graph, style, subplots, non_trained=False): 
+
+        if non_trained: 
+            graph = [extract_class_subgraphs(graph, self.planes, class_index) for class_index in range(len(self.semantic_classes))]
+        
+        for label_index, label in enumerate(self.semantic_classes): 
+            subgraph = graph[label_index]
+            importances = np.concatenate([ extract_edge_weights(subgraph, plane, return_value=True) for plane in self.planes], axis=0)
+            distances = self._extract_length(subgraph)
+            distances = np.concatenate([distances[plane] for plane in self.planes], axis=0)
+
+            nexus = None
+            if self.include_nexus: 
+                nexus = np.concatenate([ extract_edge_weights(graph, plane, return_value=True, nexus=True) for plane in self.planes])
+            self._single_plot(style, subplots[label_index], distances, importances, nexus)
+
+            subplots[label_index].set_xlabel(label)
+
+
+    def _plot_planewise(self, graph, style, subplots): 
+        distances = self._extract_length(graph) 
+
+        for plane_index, plane in enumerate(self.planes): 
+            importance = np.concatenate([extract_edge_weights(g, plane, return_value=True) for g in graph], axis=0)
+            distance = distances[plane]
+
+            nexus = None
+            if self.include_nexus: 
+                nexus = np.concatenate([ extract_edge_weights(graph, plane, return_value=True, nexus=True) for plane in self.planes])
+            self._single_plot(style, subplots[plane_index], distance, importance, nexus)
+            subplots[plane_index].set_title(plane)
+
+    def _plot_all_together(self, graph, style, subplots): 
+        importances = np.concatenate([ extract_edge_weights(graph, plane, return_value=True) for plane in self.planes])
+        distances = self._extract_length(graph)
+        nexus = None
+        if self.include_nexus: 
+            nexus = np.concatenate([ extract_edge_weights(graph, plane, return_value=True, nexus=True) for plane in self.planes])
+        self._single_plot(style, subplots, distances, importances, nexus)
+
+    def _plot_all_seperate(self, graph, style, subplots, non_trained=False): 
+        if non_trained: 
+            graph = [extract_class_subgraphs(graph, self.planes, class_index) for class_index in range(len(self.semantic_classes))]
+        
+        for label_index, label in enumerate(self.semantic_classes): 
+            subgraph = graph[label_index]
+            subplot_row = subplots[:,label_index]
+            subplot_row[0].set_title(label)
+
+            if not non_trained: 
+                subgraph = extract_class_subgraphs(subgraph, self.planes, label_index)
+
+            distances = self._extract_length(subgraph) 
+
+            for plane_index, plane in enumerate(self.planes): 
+                importance = extract_edge_weights(subgraph, plane, return_value=True)
+                distance = distances[plane]
+
+                subplot_row[plane_index].set_ylabel(plane)
+                nexus = None
+                if self.include_nexus: 
+                    nexus = extract_edge_weights(subgraph, plane, return_value=True, nexus=True)
+                self._single_plot(style=style, subplot= subplot_row[plane_index], distances=distance, importances=importance, nexus_importances=nexus)
+
+
+    def _linreg_fit(self, x, y): 
+        from scipy.stats import linregress
+        
+        regression = linregress(x, y)
+        x_fit = np.linspace(x.min(), x.max(), 200)
+        y_fit = regression.slope*x_fit + regression.intercept
+
+        return x_fit, y_fit, regression.slope, regression.intercept, regression.rvalue
+
+    def _scatter_plot(self, data, subplot): 
+        x = data[0]
+        y = data[1]
+        x_fit, y_fit, _, _, r = self._linreg_fit(x, y)
+
+        subplot.scatter(x_fit, y_fit, alpha=0.6, label=f" R^2={round(r,4)}")
+        subplot.scatter(x, y)
+        subplot.legend()
+
+    def _histogram(self, data, subplot): 
+        importances = data[1]
+        subplot.hist(importances, alpha=0.8, label="Plane")
+
+        expected_cut = importances.quantile(1-self.percentile)
+        subplot.axvline(expected_cut, color='black')
+
+        if self.include_nexus: 
+            nexus_importances = data[-1]
+            assert nexus_importances is not None, "Nexus edge weighs not calculated!"
+            subplot.hist(nexus_importances, alpha=0.6, label="Nexus")
+            subplot.legend()
+
+
+    def _single_plot(self, style, subplot, distances, importances, nexus_importances=None): 
+        data = (distances, importances, nexus_importances)
+        if len(importances)!=0 and len(distances)!=0: 
+            {"scatter": self._scatter_plot, "histogram": self._histogram}[style](data, subplot)

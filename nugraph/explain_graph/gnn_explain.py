@@ -9,7 +9,12 @@ from nugraph.explain_graph.algorithms.hetero_gnnexplaner import HeteroGNNExplain
 from nugraph.explain_graph.class_hetero_gnnexplainer import MultiEdgeHeteroGNNExplainer
 from nugraph.explain_graph.algorithms.prune_gnn_explainer import NonTrainedHeteroGNNExplainer
 from nugraph.explain_graph.utils.masking_utils import get_masked_graph, MaskStrats
-from nugraph.explain_graph.utils.edge_visuals import EdgeVisuals, InteractiveEdgeVisuals, make_subgraph_kx
+from nugraph.explain_graph.utils.edge_visuals import (
+    EdgeVisuals, 
+    InteractiveEdgeVisuals, 
+    make_subgraph_kx, 
+    EdgeLengthDistribution
+)
 
 import matplotlib.pyplot as plt 
 import h5py 
@@ -82,7 +87,7 @@ class GlobalGNNExplain(ExplainLocal):
 class ClasswiseGNNExplain(GlobalGNNExplain): 
     def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y'], n_batches=None):
         super().__init__(data_path, out_path, checkpoint_path, batch_size, test, planes, n_batches=n_batches)
-        self.semantic_classes = {}
+        self.semantic_classes = ['MIP','HIP','shower','michel','diffuse']
         model_config =  ModelConfig(
             mode='multiclass_classification',
             task_level='node', 
@@ -90,7 +95,7 @@ class ClasswiseGNNExplain(GlobalGNNExplain):
         
         self.explainer = HeteroExplainer(
             model=self.model, 
-            algorithm=MultiEdgeHeteroGNNExplainer(epochs=60, plane=self.planes), 
+            algorithm=MultiEdgeHeteroGNNExplainer(epochs=200, plane=self.planes), 
             explanation_type='model', 
             model_config=model_config,
             node_mask_type="object",
@@ -107,12 +112,17 @@ class ClasswiseGNNExplain(GlobalGNNExplain):
         for index, explain in enumerate(explaination): 
             # Combine them all into one graph for the visuals
             subgraphs = []
+            unmasked_subgraphs = []
             for class_index, sub_explain in explain.items(): 
                 subgraph = self.get_explaination_subgraph(explaination=sub_explain)
-
-                subgraph['node_mask'] = explain[class_index]['node_mask']
-                subgraph['edge_mask'] = explain[class_index]['edge_mask']
+                subgraph['node_mask'] = sub_explain['node_mask']
+                subgraph['edge_mask'] = sub_explain['edge_mask']
                 subgraphs.append(subgraph)
+
+                unmasked_graph = sub_explain['graph']
+                unmasked_graph['node_mask'] = sub_explain['node_mask']
+                unmasked_graph['edge_mask'] = sub_explain['edge_mask']
+                unmasked_subgraphs.append(unmasked_graph)
 
             graph = explain[list(explain.keys())[0]]['graph']
             
@@ -123,7 +133,27 @@ class ClasswiseGNNExplain(GlobalGNNExplain):
                 file_name=f"{file_name}_{index}.png", 
                 nexus_distribution=False, 
                 class_plot=True)
+
+            edge_plots = EdgeLengthDistribution(
+                out_path=self.out_path, 
+                planes=self.planes, 
+                semantic_classes=self.semantic_classes, 
+                include_nexus=True)
+
+            edge_plots.plot(
+                unmasked_subgraphs, 
+                style='histogram', 
+                split='all', 
+                file_name="class_edge_distribution.png")
             
+            edge_plots.plot(
+                unmasked_subgraphs, 
+                style='scatter', 
+                split='all', 
+                file_name="length_correlation.png")
+
+            
+
             self.explainer.algorithm.plot_loss(
                 f"{self.out_path.rstrip('/')}/explainer_loss.png"
             )

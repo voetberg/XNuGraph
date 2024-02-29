@@ -31,7 +31,6 @@ class MaskStrats:
         return edges, edges_nexus
 
 
-
     @staticmethod
     def top_quartile(graph: HeteroData, edge_weights:torch.Tensor, nexus_edge_weights:torch.Tensor, plane:str): 
         return MaskStrats.top_percentile(graph, edge_weights, nexus_edge_weights, plane, percentile=0.25)
