@@ -20,12 +20,12 @@ import matplotlib.pyplot as plt
 import h5py 
 
 class GlobalGNNExplain(ExplainLocal): 
-    def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y'], n_batches=None):
+    def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y'], n_batches=None, message_passing_steps=5):
         self.planes = planes
         self.explainations = []
         self.masking_strat = MaskStrats.top_quartile
 
-        super().__init__(data_path, out_path, checkpoint_path, batch_size, test, n_batches=n_batches)
+        super().__init__(data_path, out_path, checkpoint_path, batch_size, test, n_batches=n_batches, message_passing_steps=message_passing_steps)
 
         model_config =  ModelConfig(
             mode='multiclass_classification',
@@ -34,7 +34,7 @@ class GlobalGNNExplain(ExplainLocal):
         
         self.explainer = HeteroExplainer(
             model=self.model, 
-            algorithm=HeteroGNNExplainer(epochs=300, plane=self.planes), 
+            algorithm=HeteroGNNExplainer(epochs=3, plane=self.planes), 
             explanation_type='model', 
             model_config=model_config,
             node_mask_type="object",
@@ -42,24 +42,20 @@ class GlobalGNNExplain(ExplainLocal):
         )
 
     def get_explaination_subgraph(self, explaination):
-        node_mask = explaination['node_mask']
-        edge_mask = explaination['edge_mask']
+        edge_mask = explaination.collect("edge_mask")
         return get_masked_graph(
-            explaination['graph'], node_mask, edge_mask, planes=self.planes, mask_strategy=self.masking_strat
+            explaination, edge_mask, planes=self.planes, mask_strategy=self.masking_strat
         )
     
-    def visualize(self, explaination, file_name=None, interactive=False):
+    def visualize(self, explaination, file_name=None, *args, **kwargs):
+        for graph in explaination: 
+            if file_name is None: 
+                file_name = f"subgraph_{datetime.now().timestamp()}"
 
-        if file_name is None: 
-            file_name = f"subgraph_{datetime.now().timestamp()}"
-
-        subgraph = self.get_explaination_subgraph(explaination)
-        if interactive: 
-            [EdgeVisuals(planes=self.planes).interactive_plot(graph=subgraph, plane=plane, outdir=self.out_path, file_name=f"{plane}_{file_name}.html") for plane in self.planes]
-        else: 
+            subgraph = self.get_explaination_subgraph(graph)
             EdgeVisuals(planes=self.planes).plot(graph=subgraph, outdir=self.out_path, file_name=f"{file_name}.png", nexus_distribution=True)
 
-        json.dump(self.metrics, open(f"{self.out_path}/metrics_{file_name}.json", 'w'))
+            json.dump(self.metrics, open(f"{self.out_path}/metrics_{file_name}.json", 'w'))
 
     def explain(self, data):
         try:
@@ -85,8 +81,8 @@ class GlobalGNNExplain(ExplainLocal):
         f.close()
     
 class ClasswiseGNNExplain(GlobalGNNExplain): 
-    def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y'], n_batches=None):
-        super().__init__(data_path, out_path, checkpoint_path, batch_size, test, planes, n_batches=n_batches)
+    def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y'], n_batches=None, message_passing_steps=5):
+        super().__init__(data_path, out_path, checkpoint_path, batch_size, test, planes, n_batches=n_batches, message_passing_steps=message_passing_steps)
         self.semantic_classes = ['MIP','HIP','shower','michel','diffuse']
         model_config =  ModelConfig(
             mode='multiclass_classification',
@@ -95,7 +91,7 @@ class ClasswiseGNNExplain(GlobalGNNExplain):
         
         self.explainer = HeteroExplainer(
             model=self.model, 
-            algorithm=MultiEdgeHeteroGNNExplainer(epochs=200, plane=self.planes), 
+            algorithm=MultiEdgeHeteroGNNExplainer(epochs=2, plane=self.planes), 
             explanation_type='model', 
             model_config=model_config,
             node_mask_type="object",
@@ -113,18 +109,12 @@ class ClasswiseGNNExplain(GlobalGNNExplain):
             # Combine them all into one graph for the visuals
             subgraphs = []
             unmasked_subgraphs = []
-            for class_index, sub_explain in explain.items(): 
+            for sub_explain in explain.values(): 
                 subgraph = self.get_explaination_subgraph(explaination=sub_explain)
-                subgraph['node_mask'] = sub_explain['node_mask']
-                subgraph['edge_mask'] = sub_explain['edge_mask']
                 subgraphs.append(subgraph)
+                unmasked_subgraphs.append(sub_explain)
 
-                unmasked_graph = sub_explain['graph']
-                unmasked_graph['node_mask'] = sub_explain['node_mask']
-                unmasked_graph['edge_mask'] = sub_explain['edge_mask']
-                unmasked_subgraphs.append(unmasked_graph)
-
-            graph = explain[list(explain.keys())[0]]['graph']
+            graph = explain[list(explain.keys())[0]]
             
             EdgeVisuals(planes=self.planes).plot(
                 graph=subgraphs, 
@@ -152,7 +142,6 @@ class ClasswiseGNNExplain(GlobalGNNExplain):
                 split='all', 
                 file_name="length_correlation.png")
 
-            
 
             self.explainer.algorithm.plot_loss(
                 f"{self.out_path.rstrip('/')}/explainer_loss.png"
@@ -165,9 +154,9 @@ class ClasswiseGNNExplain(GlobalGNNExplain):
         return metrics
     
 class GNNExplainFeatures(GlobalGNNExplain): 
-    def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y']):
+    def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y'],message_passing_steps=5):
         self.planes = planes
-        super().__init__(data_path, out_path, checkpoint_path, batch_size, test)
+        super().__init__(data_path, out_path, checkpoint_path, batch_size, test, message_passing_steps=message_passing_steps)
 
         model_config =  ModelConfig(
             mode='multiclass_classification',
@@ -231,8 +220,8 @@ class GNNExplainFeatures(GlobalGNNExplain):
 
 
 class GNNExplainerPrune(GlobalGNNExplain): 
-    def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y'], n_batches=None):
-        super().__init__(data_path, out_path, checkpoint_path, batch_size, test, planes, n_batches)
+    def __init__(self, data_path: str, out_path: str = "explainations/", checkpoint_path: str = None, batch_size: int = 16, test: bool = False, planes=['u', 'v', 'y'], n_batches=None, message_passing_steps=5):
+        super().__init__(data_path, out_path, checkpoint_path, batch_size, test, planes, n_batches, message_passing_steps=message_passing_steps)
         model_config =  ModelConfig(
             mode='multiclass_classification',
             task_level='node', 
@@ -253,7 +242,7 @@ class GNNExplainerPrune(GlobalGNNExplain):
     def get_explaination_subgraph(self, explaination):
         edge_mask = explaination['edge_mask']
         masked_graph = get_masked_graph(
-            explaination['graph'], edge_mask=edge_mask, node_mask=None, planes=self.planes
+            explaination['graph'], edge_mask=edge_mask, planes=self.planes
         )
         masked_graph['edge_mask'] = edge_mask
         return masked_graph

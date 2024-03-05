@@ -3,14 +3,11 @@ import torch
 
 def unfaithfulness(explainer, explanation): 
         
-    node_mask = explanation.get('node_mask')
-    edge_mask = explanation.get('edge_mask')
-    graph = explanation['graph']
+    node_mask = explanation.collect('node_mask')
+    edge_mask = explanation.collect('edge_mask')
+    y = explainer.get_prediction(explanation)['x_semantic']
 
-    y = explainer.get_prediction(graph)['x_semantic']
-
-    y_hat = explainer.get_masked_prediction(graph, node_mask,
-                                            edge_mask)['x_semantic']
+    y_hat = explainer.get_masked_prediction(explanation, edge_mask)['x_semantic']
 
     kl_div = {
         plane: torch.nn.functional.kl_div(
@@ -20,25 +17,22 @@ def unfaithfulness(explainer, explanation):
     }
     return {plane: 1 - float(torch.exp(-kl_div[plane])) for plane in node_mask.keys()}
 
-def fidelity(explainer, explaionation): 
-    node_mask = explaionation.get('node_mask')
-    edge_mask = explaionation.get('edge_mask')
-    graph = explaionation['graph']
-
-    y = explaionation.target
-    y_hat = explainer.get_prediction(graph)
+def fidelity(explainer, explanation): 
+    node_mask = explanation.collect('node_mask')
+    edge_mask = explanation.collect('edge_mask')
+    
+    y = explanation.target
+    y_hat = explainer.get_prediction(explanation)
     y_hat = explainer.get_target(y_hat)
 
     explain_y_hat = explainer.get_masked_prediction(
-        graph,
-        node_mask,
+        explanation,
         edge_mask,
     )
     explain_y_hat = explainer.get_target(explain_y_hat)
 
     complement_y_hat = explainer.get_masked_prediction(
-        graph,
-        {key: 1-node_mask[key] for key in node_mask.keys()},
+        explanation,
         {key: 1-edge_mask[key] for key in edge_mask.keys()},
     )
     complement_y_hat = explainer.get_target(complement_y_hat)

@@ -15,21 +15,24 @@ class Load:
     def __init__(self,
                  checkpoint_path="./paper.ckpt", 
                  data_path="/wclustre/fwk/exatrkx/data/uboone/CHEP2023/CHEP2023.gnn.h5", 
+                 message_passing_steps=5,
                  batch_size=16, 
                  test=False, 
                  planes=['u','v','y'], 
                  n_batches=None) -> None:
+        self.message_passing_steps = message_passing_steps
         self.test = test
         self.planes = planes
         if test: 
             self.data = self.load_data("./test_data.h5", batch_size=1)
         else: 
-            self.data = self.load_data(data_path, batch_size, n_batches)
+            self.data = self.load_data(data_path, batch_size=1)
         try: 
             self.model = self.load_checkpoint(checkpoint_path)
             
         except Exception as e: 
             print(e)
+
             print("Could not load checkpoint, using an untrained network")
             self.model = NuGraph2()
         #self.predictions = self.make_predictions()
@@ -40,6 +43,7 @@ class Load:
         try: 
             model = graph.load_from_checkpoint(
                 checkpoint_path, 
+                num_iters=self.message_passing_steps,
                 planar_features=64,
                 nexus_features = 16,
                 vertex_features= 40) 
@@ -71,13 +75,11 @@ class Load:
         if n_batches is not None: 
             data = DataLoader(data.dataset[n_batches:], batch_size=batch_size)
 
-        if not self.test: 
-            if "batch" in data.dataset[0]['u'].keys(): 
-                indices = data.dataset[0].collect('batch')['u'].unique() 
-                batches = [self.single_graphs(data.dataset[0], index) for index in indices]
-                return batches 
-            else: 
-                raise KeyError("No batches Found")
+        if "batch" in data.dataset[0]['u'].keys(): 
+            indices = data.dataset[0].collect('batch')['u'].unique() 
+            batches = [self.single_graphs(data.dataset[0], index) for index in indices]
+            return batches 
+
         else: 
             return data.dataset
 
@@ -104,7 +106,7 @@ class Load:
     def unpack(data_batch, planes=['u', 'v', 'y']): 
         try: 
             data_batch = Batch.from_data_list([datum for datum in data_batch])
-        except NotImplementedError: 
+        except: 
             # Isn't an iterable
             pass 
         

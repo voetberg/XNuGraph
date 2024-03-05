@@ -53,35 +53,32 @@ def extract_edge_weights(graph, plane, return_value=False, cmap='viridis', nexus
     weights = [1 for _ in range(len(graph[(plane, "plane", plane)]))]
     from_graph = False 
     
-
     weight_colors = 'cornflowerblue'
-    if "edge_mask" in graph.keys: 
-        if not nexus: 
-            plane_name = plane 
-        else: 
-            plane_name = f"{plane}_nexus"
-        weights = graph["edge_mask"][plane_name]
-        from_graph=True 
 
     # edge_attr is more acturate for picking mask shapes
-        if not nexus: 
-            plane_name = plane 
-        else: 
-            plane_name = "sp"
-    if hasattr(graph[plane, plane_name], "edge_attr"): 
-        weights = graph[plane, plane_name].edge_attr
+    if not nexus: 
+        plane_name = plane 
+    else: 
+        plane_name = "sp"
+
+    if hasattr(graph[plane, plane_name], "edge_mask"): 
+        weights = graph[plane, plane_name].edge_mask
         from_graph = True
 
-    if (weights.numel() != 0) and from_graph: 
-        weights = (weights - weights.min())/(weights.max() - weights.min())
+    if from_graph: 
+        try: 
+            weights = (weights - weights.min())/(weights.max() - weights.min())
 
-        cNorm  = colors.Normalize(vmin=0, vmax=weights.max())
-        color_map = cmx.ScalarMappable(norm=cNorm, cmap=plt.get_cmap(cmap))
-        weight_colors = [color_map.to_rgba(weight) for weight in weights]
+            cNorm  = colors.Normalize(vmin=0, vmax=weights.max())
+            color_map = cmx.ScalarMappable(norm=cNorm, cmap=plt.get_cmap(cmap))
+            weight_colors = [color_map.to_rgba(weight) for weight in weights]
 
-    
+        except RuntimeError: 
+            pass 
+        
     if return_value: 
         return weights
+    
     return weight_colors
 
 def extract_node_weights(graph, plane, node_field='node_mask', scale=True): 
@@ -98,10 +95,6 @@ def extract_node_weights(graph, plane, node_field='node_mask', scale=True):
 
 
 def extract_class_subgraphs(graph, planes, class_index): 
-    if "edge_mask" in graph.keys: 
-        for plane in planes: 
-            graph[plane, plane].edge_attr = graph['edge_mask'][plane]
-            graph[plane, "sp"].edge_attr = graph['edge_mask'][f'{plane}_nexus']
 
     labels = graph.collect("y_semantic")
     nodes = {}
@@ -168,10 +161,9 @@ class EdgeVisuals:
     def plot_nexus_weights(self, graph, plot): 
         """Plot a histogram of the nexus edge weights
         """
-        assert "edge_mask" in graph.keys
+        edge_weight = nexus_edges = graph.collect("edge_mask")
         for plane in self.planes: 
-            assert f"{plane}_nexus" in graph['edge_mask'].keys()
-            nexus_edges = graph['edge_mask'][f'{plane}_nexus'].ravel() 
+            nexus_edges = edge_weight[(plane, "nexus", "sp")]
             
             bins = math.ceil(math.sqrt(len(nexus_edges)))
             bins = bins if bins!=0 else 10
@@ -246,127 +238,6 @@ class EdgeVisuals:
             subplot_row[0].set_ylabel(class_label)
             class_graph = graph[class_index]
             self._single_plot(class_graph, ghost_plot, subplot_row, nexus_distribution=False)
-
-
-class InteractiveEdgeVisuals: 
-    def __init__(self, 
-                 plane, 
-                 semantic_classes = ['MIP','HIP','shower','michel','diffuse'], 
-                 features=["1","2","3", "4", "5", "6"], 
-                 feature_importance = False,
-                 ) -> None:
-        self.plane = plane 
-        self.semantic_classes = semantic_classes
-        self.features = features
-        self.node_label_field = "node_mask" if feature_importance else "x"
-
-    def _interative_edge(self, subgraph): 
-        edge_x = []
-        edge_y = []
-        for edge in subgraph.edges():
-            x0, y0 = subgraph.nodes[edge[0]]['pos']
-            x1, y1 = subgraph.nodes[edge[1]]['pos']
-            edge_x.append(x0)
-            edge_x.append(x1)
-            edge_x.append(None)
-            edge_y.append(y0)
-            edge_y.append(y1)
-            edge_y.append(None)
-
-
-        edge_traces = go.Scatter(x=edge_x, y=edge_y,
-            mode='lines', 
-            name='Edges',
-            hoverinfo='none',
-            line=dict(
-                color='cornflowerblue',
-            ),
-            line_width=2,
-            )
-        
-        return edge_traces
-        
-    def _interactive_nodes(self, subgraph, label:list[dict], class_label='0'): 
-        node_x = []
-        node_y = []
-
-        for node in subgraph.nodes():
-            x, y = subgraph.nodes[node]['pos']
-            node_x.append(x)
-            node_y.append(y)
-
-        trace_text = [
-            f"{self.node_label_field}<br>" + "<br>".join([f"{feature}:{round(point_label[feature], 5)}" for feature in point_label]) 
-            for point_label in label
-            ]
-
-        node_trace = go.Scatter(
-            x=node_x, y=node_y,
-            mode='markers',
-            hoverinfo='text', 
-            name=class_label,
-            text=trace_text,
-            marker=dict(
-                showscale=True,
-                color="black")
-        )
-
-
-        return node_trace
-    
-
-    def _grouped_interative_nodes(self, subgraph, label, node_label): 
-        labels = pd.DataFrame(label.values(),index=label.keys())
-        labels.columns = ['label']
-        traces = []
-        for unique in labels["label"].unique(): 
-            nodes_to_include = labels[labels['label']==unique].index.tolist()
-
-            label_group = subgraph.__class__()
-            label_group.add_nodes_from((n, subgraph.nodes[n]) for n in nodes_to_include)
-            
-            node_label = [node_label[node] for node in nodes_to_include]
-
-            traces.append(self._interactive_nodes(label_group, label=node_label, class_label=unique))
-        
-        return traces
-
-    def plot(self, graph, outdir=".", file_name="prediction_plot"): 
-        """
-        Produce an interactive plot where the nodes are click-able and the field can be moved.
-        Can only plot one field at a time, saves each result to an html. 
-        Args:
-            plane (str, optional): Field to plot. Defaults to u.
-
-        """
-
-        subgraph, true_labels = make_subgraph_kx(
-            graph, 
-            plane=self.plane, 
-            semantic_classes=self.semantic_classes
-            )
-
-        node_label = extract_node_weights(graph, plane=self.plane, node_field=self.node_label_field, scale=False)
-        node_label = [
-            {key: node[index].item() for index, key in enumerate(self.features)} 
-            for node in node_label
-            ]
-
-        nodes = self._grouped_interative_nodes(subgraph, true_labels, node_label)
-        edges = self._interative_edge(subgraph)
-
-        # Flatten the possible mul;tiple nodes
-        data = [edges]
-        for node in nodes: 
-            data.append(node)
-
-        fig = go.Figure(
-            data=data, 
-            layout=go.Layout(showlegend=True)
-            
-        )
-        fig.write_html(f"{outdir.rstrip('/')}/{file_name}.html")
-
 
 class EdgeLengthDistribution: 
     def __init__(self, 
@@ -533,3 +404,123 @@ class EdgeLengthDistribution:
         data = (distances, importances, nexus_importances)
         if len(importances)!=0 and len(distances)!=0: 
             {"scatter": self._scatter_plot, "histogram": self._histogram}[style](data, subplot)
+
+
+class InteractiveEdgeVisuals: 
+    def __init__(self, 
+                 plane, 
+                 semantic_classes = ['MIP','HIP','shower','michel','diffuse'], 
+                 features=["1","2","3", "4", "5", "6"], 
+                 feature_importance = False,
+                 ) -> None:
+        self.plane = plane 
+        self.semantic_classes = semantic_classes
+        self.features = features
+        self.node_label_field = "node_mask" if feature_importance else "x"
+
+    def _interative_edge(self, subgraph): 
+        edge_x = []
+        edge_y = []
+        for edge in subgraph.edges():
+            x0, y0 = subgraph.nodes[edge[0]]['pos']
+            x1, y1 = subgraph.nodes[edge[1]]['pos']
+            edge_x.append(x0)
+            edge_x.append(x1)
+            edge_x.append(None)
+            edge_y.append(y0)
+            edge_y.append(y1)
+            edge_y.append(None)
+
+
+        edge_traces = go.Scatter(x=edge_x, y=edge_y,
+            mode='lines', 
+            name='Edges',
+            hoverinfo='none',
+            line=dict(
+                color='cornflowerblue',
+            ),
+            line_width=2,
+            )
+        
+        return edge_traces
+        
+    def _interactive_nodes(self, subgraph, label:list[dict], class_label='0'): 
+        node_x = []
+        node_y = []
+
+        for node in subgraph.nodes():
+            x, y = subgraph.nodes[node]['pos']
+            node_x.append(x)
+            node_y.append(y)
+
+        trace_text = [
+            f"{self.node_label_field}<br>" + "<br>".join([f"{feature}:{round(point_label[feature], 5)}" for feature in point_label]) 
+            for point_label in label
+            ]
+
+        node_trace = go.Scatter(
+            x=node_x, y=node_y,
+            mode='markers',
+            hoverinfo='text', 
+            name=class_label,
+            text=trace_text,
+            marker=dict(
+                showscale=True,
+                color="black")
+        )
+
+
+        return node_trace
+    
+
+    def _grouped_interative_nodes(self, subgraph, label, node_label): 
+        labels = pd.DataFrame(label.values(),index=label.keys())
+        labels.columns = ['label']
+        traces = []
+        for unique in labels["label"].unique(): 
+            nodes_to_include = labels[labels['label']==unique].index.tolist()
+
+            label_group = subgraph.__class__()
+            label_group.add_nodes_from((n, subgraph.nodes[n]) for n in nodes_to_include)
+            
+            node_label = [node_label[node] for node in nodes_to_include]
+
+            traces.append(self._interactive_nodes(label_group, label=node_label, class_label=unique))
+        
+        return traces
+
+    def plot(self, graph, outdir=".", file_name="prediction_plot"): 
+        """
+        Produce an interactive plot where the nodes are click-able and the field can be moved.
+        Can only plot one field at a time, saves each result to an html. 
+        Args:
+            plane (str, optional): Field to plot. Defaults to u.
+
+        """
+
+        subgraph, true_labels = make_subgraph_kx(
+            graph, 
+            plane=self.plane, 
+            semantic_classes=self.semantic_classes
+            )
+
+        node_label = extract_node_weights(graph, plane=self.plane, node_field=self.node_label_field, scale=False)
+        node_label = [
+            {key: node[index].item() for index, key in enumerate(self.features)} 
+            for node in node_label
+            ]
+
+        nodes = self._grouped_interative_nodes(subgraph, true_labels, node_label)
+        edges = self._interative_edge(subgraph)
+
+        # Flatten the possible mul;tiple nodes
+        data = [edges]
+        for node in nodes: 
+            data.append(node)
+
+        fig = go.Figure(
+            data=data, 
+            layout=go.Layout(showlegend=True)
+            
+        )
+        fig.write_html(f"{outdir.rstrip('/')}/{file_name}.html")

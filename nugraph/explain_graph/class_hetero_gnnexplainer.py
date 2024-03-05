@@ -34,7 +34,12 @@ class MultiEdgeHeteroGNNExplainer(HeteroGNNExplainer):
                 ) for key in self.edge_mask.keys()}
 
             self._clean_model(model)
-            explainations[class_index] = Explanation(node_mask=node_mask, edge_mask=edge_mask, kwargs={"graph":graph})
+            for plane in self.planes: 
+                training_graph[plane, plane].edge_mask = edge_mask[(plane, 'plane', plane)]
+                training_graph[plane, "sp"].edge_mask = edge_mask[(plane, 'nexus', "sp")]
+                training_graph[plane].node_mask = node_mask[plane]
+                explainations[class_index] = training_graph
+    
             self.target_class += 1
 
         return explainations

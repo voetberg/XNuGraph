@@ -9,7 +9,15 @@ from torch_geometric.explain import metric as pyg_metrics
 from nugraph.explain_graph.utils import metrics 
 
 class ExplainLocal:
-    def __init__(self, data_path:str, out_path:str = "explainations/",checkpoint_path:str=None, batch_size:int=16, test:bool=False, n_batches:int=None):
+    def __init__(
+            self, 
+            data_path:str, 
+            out_path:str = "explainations/",
+            checkpoint_path:str=None, 
+            batch_size:int=16, 
+            test:bool=False, 
+            n_batches:int=None, 
+            message_passing_steps:int=5):
         """
         Abstract class 
         Perform a local explaination method on a single datapoint
@@ -20,7 +28,7 @@ class ExplainLocal:
             checkpoint_path (str, optional): Checkpoint to trained model. If not supplied, creates a new model. Defaults to None.
             batch_size (int, optional): Batch size for the data loader. Defaults to 16.
         """
-        self.load = Load(data_path=data_path, checkpoint_path=checkpoint_path, batch_size=batch_size, test=test, n_batches=n_batches)
+        self.load = Load(data_path=data_path, checkpoint_path=checkpoint_path, batch_size=batch_size, test=test, n_batches=n_batches, message_passing_steps=message_passing_steps)
         self.data = self.load.data
         self.model = self.load.model
         self.metrics = {}
