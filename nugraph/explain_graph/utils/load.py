@@ -58,6 +58,7 @@ class Load:
         except RuntimeError:
             model = graph.load_from_checkpoint(
                 checkpoint_path,
+                num_iters=self.message_passing_steps,
                 planar_features=64,
                 nexus_features=16,
                 vertex_features=40,

@@ -63,12 +63,10 @@ class HeteroExplainer(Explainer):
         out = self.get_prediction(graph=masked_graph, class_out=class_out)
         return out
 
-    def __call__(self, graph):
+    def __call__(self, graph, nodes=None):
         target = self.get_prediction(graph)
-
         self.model.eval()
-
-        explanation = self.algorithm(self.model, graph)
+        explanation = self.algorithm(self.model, graph, nodes)
         try:
             explanation.target = target
         except AttributeError:
@@ -93,9 +91,9 @@ class HeteroGNNExplainer(GNNExplainer):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.nexus = nexus
 
-    def forward(self, model, graph):
+    def forward(self, model, graph, nodes=None):
         prediction = copy.deepcopy(graph).to(self.device)
-        prediction = self._train(model, prediction)
+        prediction = self._train(model, prediction, node_index=nodes)
 
         if self.node_mask is not None:
             node_mask = {
@@ -133,6 +131,7 @@ class HeteroGNNExplainer(GNNExplainer):
         edge_mask = None
 
         (N, F), E = x_mask.size(), edge_index_mask.size(1)
+        F = 4
         node_mask = None
 
         if node:
@@ -242,11 +241,10 @@ class HeteroGNNExplainer(GNNExplainer):
         graph.requires_grad = True
         model.step(graph.to(self.device))  # Set the y
 
-        y = (
-            torch.concat([t for t in graph.collect("x_semantic").values()])
-            .float()
-            .to(self.device)
-        )
+        y = {
+            key: graph.collect("x_semantic")[key].float().to(self.device)
+            for key in self.planes
+        }
 
         parameters = self.assign_masks(graph)
         optimizer = torch.optim.Adam(parameters, lr=self.lr)
@@ -257,24 +255,23 @@ class HeteroGNNExplainer(GNNExplainer):
                 copy_graph, edge_mask=self.edge_mask, node_mask=self.node_mask
             ).to(self.device)
 
-            model.step(stepped_graph)  # Set the y
-            y_hat = (
-                torch.concat([t for t in stepped_graph.collect("x_semantic").values()])
-                .float()
-                .to(self.device)
-            )
-
-            # Match the output of the model
-
-            assert y.size() == y_hat.size(), print(
-                f"{y.size()} vs {y_hat.size()}"
-            )  ## Personal check that things are not weirdly transposed
+            model.step(stepped_graph)  # Set the y_hat
+            y_hat = {
+                key: stepped_graph.collect("x_semantic")[key].float().to(self.device)
+                for key in self.planes
+            }
 
             if node_index is not None:
-                y = y[node_index]
-                y_hat = y_hat[node_index]
+                assert y_hat.keys() == node_index.keys()
+                y_compare = torch.concat([y[key][node_index[key]] for key in y.keys()])
+                y_hat = torch.concat(
+                    [y_hat[key][node_index[key]] for key in y_hat.keys()]
+                )
+            else:
+                y_compare = torch.concat([y[key] for key in y_hat.keys()])
+                y_hat = torch.concat([y_hat[key] for key in y_hat.keys()])
 
-            loss = self._loss(y_hat, y)
+            loss = self._loss(y_hat, y_compare)
 
             if loss_history is not None:
                 loss_history.append(loss.item())

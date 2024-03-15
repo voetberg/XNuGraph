@@ -1,10 +1,13 @@
 from typing import Iterable
+from pynuml import io
+
+import h5py
+from torch_geometric.explain import ModelConfig
+from torch_geometric.data import HeteroData
+from datetime import datetime
+
 from nugraph.explain_graph.explain import ExplainLocal
 from nugraph.explain_graph.utils.edge_visuals import EdgeVisuals
-import json
-
-from torch_geometric.explain import ModelConfig
-from datetime import datetime
 from nugraph.explain_graph.algorithms.hetero_gnnexplaner import (
     HeteroGNNExplainer,
     HeteroExplainer,
@@ -12,18 +15,13 @@ from nugraph.explain_graph.algorithms.hetero_gnnexplaner import (
 from nugraph.explain_graph.algorithms.class_hetero_gnnexplainer import (
     MultiEdgeHeteroGNNExplainer,
 )
-
 from nugraph.explain_graph.algorithms.prune_gnn_explainer import (
     NonTrainedHeteroGNNExplainer,
 )
 from nugraph.explain_graph.utils.masking_utils import get_masked_graph, MaskStrats
 from nugraph.explain_graph.utils.edge_visuals import (
-    make_subgraph_kx,
     EdgeLengthDistribution,
 )
-
-import matplotlib.pyplot as plt
-import h5py
 
 
 class GlobalGNNExplain(ExplainLocal):
@@ -89,10 +87,6 @@ class GlobalGNNExplain(ExplainLocal):
                 nexus_distribution=True,
             )
 
-            json.dump(
-                self.metrics, open(f"{self.out_path}/metrics_{file_name}.json", "w")
-            )
-
     def explain(self, data):
         try:
             len(data)
@@ -110,9 +104,14 @@ class GlobalGNNExplain(ExplainLocal):
 
     def save(self):
         super().save()
-        with h5py.File(f"{self.out_path}/explaination_graphs.h5", "w") as f:
-            f.create_dataset(name="results", data=self.explainations)
-        f.close()
+        save_heterodata = HeteroData()
+        if isinstance(self.explainations, list):
+            for index in range(len(self.explainations)):
+                save_heterodata[index] = self.explainations[index]
+        interface = io.H5Interface(
+            h5py.File(f"{self.out_path}/explaination_graphs.h5", "w")
+        )
+        interface.save_heterodata(save_heterodata)
 
 
 class ClasswiseGNNExplain(GlobalGNNExplain):
@@ -255,82 +254,3 @@ class GNNExplainerPrune(GlobalGNNExplain):
         )
         masked_graph["edge_mask"] = edge_mask
         return masked_graph
-
-
-class GNNExplainFeatures(GlobalGNNExplain):
-    def __init__(
-        self,
-        data_path: str,
-        out_path: str = "explainations/",
-        checkpoint_path: str = None,
-        batch_size: int = 16,
-        test: bool = False,
-        planes=["u", "v", "y"],
-        message_passing_steps=5,
-        n_epochs=200,
-    ):
-        self.planes = planes
-        super().__init__(
-            data_path,
-            out_path,
-            checkpoint_path,
-            batch_size,
-            test,
-            message_passing_steps=message_passing_steps,
-            n_epochs=n_epochs,
-        )
-
-        model_config = ModelConfig(
-            mode="multiclass_classification", task_level="node", return_type="raw"
-        )
-
-        self.explainer = HeteroExplainer(
-            model=self.model,
-            algorithm=HeteroGNNExplainer(
-                epochs=self.n_epochs, single_plane=False, plane=self.planes
-            ),
-            explanation_type="model",
-            model_config=model_config,
-            node_mask_type="attributes",
-        )
-
-    def _importance_plot(self, subgraph, file_name):
-        plot_engine = EdgeVisuals(planes=self.planes)
-        _, subplots = plt.subplots(2, 3, figsize=(16 * 3, 16 * 2))
-        subgraph = subgraph["graph"]
-        for index, plane in enumerate(self.planes):
-            subgraph_kx = make_subgraph_kx(subgraph, plane=plane)
-            node_list = subgraph_kx.nodes
-            subplots[0, index].set_title(plane)
-
-            plot_engine.plot_graph(
-                subgraph, subgraph_kx, plane, node_list, subplots[0, index]
-            )
-
-            importance = subgraph["node_mask"][plane].mean(axis=0)
-            subplots[1, index].bar(x=range(len(importance)), height=importance)
-            subgraph[plane]["node_mask"] = subgraph["node_mask"][plane]
-
-        plt.savefig(f"{self.out_path.rstrip('/')}/{file_name}_mean.png")
-
-    def get_explaination_subgraph(self, explaination):
-        return explaination
-
-    def visualize(self, explaination=None, file_name="explaination_graph"):
-        append_explainations = True
-        if len(self.explainations) != 0:
-            append_explainations = False
-
-        if not explaination:
-            for batch in self.data:
-                explainations = self.explain(batch, raw=True)
-                subgraph = self.get_explaination_subgraph(explainations)
-
-                self._importance_plot(subgraph, file_name)
-
-                if append_explainations:
-                    self.explainations.update(subgraph)
-
-        else:
-            subgraph = self.get_explaination_subgraph(explaination)
-            self._importance_plot(subgraph, file_name)

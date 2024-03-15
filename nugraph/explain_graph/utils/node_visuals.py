@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.interpolate import Rbf
+from nugraph.explain_graph.utils.edge_visuals import EdgeVisuals
 
 
 class NodeVisuals:
@@ -10,11 +11,15 @@ class NodeVisuals:
         planes=["u", "v", "y"],
         semantic_classes=["MIP", "HIP", "shower", "michel", "diffuse"],
         percentile=0.3,
+        ghost_overall=False,
+        n_bins=30,
     ) -> None:
         self.out_path = out_path
         self.planes = planes
         self.semantic_classes = semantic_classes
         self.percentile = percentile
+        self.draw_ghost = ghost_overall
+        self.n_bins = n_bins
 
     def plot(self, style, graph, split="class", file_name="plot.png"):
         assert style in ["hist", "hist2d", "heat"]
@@ -36,8 +41,7 @@ class NodeVisuals:
         figure, subplots = plt.subplots(
             nrows=n_rows, ncols=n_cols, figsize=(3 * n_cols, 3 * n_rows)
         )
-        # if style == "heat":
-        #     figure, subplots = plt.subplots(nrows=n_rows, ncols=n_cols, figsize=(6*n_cols, 6*n_rows), subplot_kw={"projection": "3d"})
+
         {
             "class": self._plot_classwise,
             "plane": self._plot_planewise,
@@ -67,23 +71,21 @@ class NodeVisuals:
 
     def _hist_2d(self, subplot, importances, position):
         x, y = position[:, 0], position[:, 1]
-        bins = 2 * int(np.ceil(np.log2(importances.shape[0])))
-        subplot.hist2d(x, y, bins=bins, weights=importances)
+        subplot.hist2d(x, y, bins=self.n_bins, weights=importances)
 
     def _heat(self, subplot, importances, position):
         x = np.linspace(
-            position[:, 0].min(), position[:, 0].max(), num=importances.shape[0]
+            position[:, 0].min(), position[:, 0].max(), num=len(importances.ravel())
         )
         y = np.linspace(
-            position[:, 1].min(), position[:, 1].max(), num=importances.shape[0]
+            position[:, 1].min(), position[:, 1].max(), num=len(importances.ravel())
         )
         X, Y = np.meshgrid(x, y)
 
-        interoplatator = Rbf(x, y, importances)
+        interoplatator = Rbf(x, y, importances.ravel())
         z = interoplatator(X, Y)
 
-        contour_bins = 2 * int(np.ceil(np.log2(position.shape[0])))
-        contours = np.linspace(z.min(), z.max(), contour_bins)
+        contours = np.linspace(z.min(), z.max(), self.n_bins)
         subplot.contourf(x, y, z, levels=contours)
 
     def _plot_classwise(self, graph, style, subplots):
@@ -124,6 +126,10 @@ class NodeVisuals:
                         position,
                     )
                     subplots[0][plane_index].set_title([plane])
+                    if self.draw_ghost and style != "hist":
+                        EdgeVisuals(planes=self.planes).draw_ghost_plot(
+                            graph[0], plane=plane, axes=subplots[feature][plane_index]
+                        )
         else:
             print("heatmap plots not supported for planewise splits")
 
@@ -151,3 +157,7 @@ class NodeVisuals:
                     positions[plane],
                 )
                 subplot_row[plane_index].set_ylabel(plane)
+                if self.draw_ghost and style != "hist":
+                    EdgeVisuals(planes=self.planes).draw_ghost_plot(
+                        subgraph, plane=plane, axes=subplot_row[plane_index]
+                    )

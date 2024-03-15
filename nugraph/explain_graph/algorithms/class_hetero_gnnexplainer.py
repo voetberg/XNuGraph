@@ -2,6 +2,7 @@ from nugraph.explain_graph.algorithms.hetero_gnnexplaner import HeteroGNNExplain
 
 import copy
 import torch
+import numpy as np
 
 
 class MultiEdgeHeteroGNNExplainer(HeteroGNNExplainer):
@@ -33,14 +34,14 @@ class MultiEdgeHeteroGNNExplainer(HeteroGNNExplainer):
             multiple_loss.append(self.loss_history)
             self.loss_history = []
 
+        self.loss_history = multiple_loss
         return explainations
 
     def plot_loss(self, file_name):
         import matplotlib.pyplot as plt
 
         plt.close("all")
-
-        norm = torch.nn.functional.normalize(torch.Tensor(self.loss_history), dim=0)
+        norm = np.mean(np.array(self.loss_history), axis=0)
         plt.plot(range(len(norm)), norm)
 
         plt.legend()

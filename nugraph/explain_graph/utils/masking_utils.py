@@ -26,13 +26,13 @@ class MaskStrats:
             )[0]
 
         except RuntimeError:
-            edge_index = []
+            edge_index = torch.where(nexus_edge_weights == nexus_edge_weights)[0]
         try:
             edge_nexus_index = torch.where(
                 nexus_edge_weights > nexus_edge_weights.quantile(1 - percentile)
             )[0]
         except RuntimeError:
-            edge_nexus_index = []
+            edge_nexus_index = torch.where(nexus_edge_weights == nexus_edge_weights)[0]
 
         return edge_index, edge_nexus_index
 
@@ -66,7 +66,7 @@ def get_masked_graph(
     new_nodes = {}
     for plane in planes:
         if node_mask is not None:
-            new_nodes[plane] = graph[plane]["x"] * node_mask[plane].sigmoid()
+            new_nodes[plane] = graph[plane]["x"][:, :4] * node_mask[plane].sigmoid()
 
         if edge_mask is not None:
             edge_weights = edge_mask[(plane, "plane", plane)].sigmoid()
