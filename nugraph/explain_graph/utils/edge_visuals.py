@@ -251,8 +251,7 @@ class EdgeVisuals:
     def _plot_classes(self, graph, ghost_plot, subplots):
         if ghost_plot is None:
             ghost_plot = deepcopy(graph)
-
-        if not isinstance(type(graph), list):
+        if not isinstance(graph, list):
             graph = [
                 extract_class_subgraphs(graph, self.planes, class_index)
                 for class_index in range(len(self.semantic_classes))
@@ -261,10 +260,13 @@ class EdgeVisuals:
         for class_index, class_label in enumerate(self.semantic_classes):
             subplot_row = subplots[class_index, :]
             subplot_row[0].set_ylabel(class_label)
-            class_graph = graph[class_index]
-            self._single_plot(
-                class_graph, ghost_plot, subplot_row, nexus_distribution=False
-            )
+            try:
+                class_graph = graph[class_index]
+                self._single_plot(
+                    class_graph, ghost_plot, subplot_row, nexus_distribution=False
+                )
+            except IndexError:
+                pass
 
 
 class EdgeLengthDistribution:
@@ -357,34 +359,37 @@ class EdgeLengthDistribution:
             ]
 
         for label_index, label in enumerate(self.semantic_classes):
-            subgraph = graph[label_index]
-            importances = np.concatenate(
-                [
-                    extract_edge_weights(subgraph, plane, return_value=True)
-                    for plane in self.planes
-                ],
-                axis=0,
-            )
-            distances = self._extract_length(subgraph)
-            distances = np.concatenate(
-                [distances[plane] for plane in self.planes], axis=0
-            )
-
-            nexus = None
-            if self.include_nexus:
-                nexus = np.concatenate(
+            try:
+                subgraph = graph[label_index]
+                importances = np.concatenate(
                     [
-                        extract_edge_weights(
-                            graph, plane, return_value=True, nexus=True
-                        )
+                        extract_edge_weights(subgraph, plane, return_value=True)
                         for plane in self.planes
-                    ]
+                    ],
+                    axis=0,
                 )
-            self._single_plot(
-                style, subplots[label_index], distances, importances, nexus
-            )
+                distances = self._extract_length(subgraph)
+                distances = np.concatenate(
+                    [distances[plane] for plane in self.planes], axis=0
+                )
 
-            subplots[label_index].set_xlabel(label)
+                nexus = None
+                if self.include_nexus:
+                    nexus = np.concatenate(
+                        [
+                            extract_edge_weights(
+                                graph, plane, return_value=True, nexus=True
+                            )
+                            for plane in self.planes
+                        ]
+                    )
+                self._single_plot(
+                    style, subplots[label_index], distances, importances, nexus
+                )
+
+                subplots[label_index].set_xlabel(label)
+            except IndexError:
+                pass
 
     def _plot_planewise(self, graph, style, subplots):
         distances = self._extract_length(graph)
@@ -435,32 +440,39 @@ class EdgeLengthDistribution:
             ]
 
         for label_index, label in enumerate(self.semantic_classes):
-            subgraph = graph[label_index]
-            subplot_row = subplots[:, label_index]
-            subplot_row[0].set_title(label)
+            try:
+                subgraph = graph[label_index]
+                subplot_row = subplots[:, label_index]
+                subplot_row[0].set_title(label)
 
-            if not non_trained:
-                subgraph = extract_class_subgraphs(subgraph, self.planes, label_index)
-
-            distances = self._extract_length(subgraph)
-
-            for plane_index, plane in enumerate(self.planes):
-                importance = extract_edge_weights(subgraph, plane, return_value=True)
-                distance = distances[plane]
-
-                subplot_row[plane_index].set_ylabel(plane)
-                nexus = None
-                if self.include_nexus:
-                    nexus = extract_edge_weights(
-                        subgraph, plane, return_value=True, nexus=True
+                if not non_trained:
+                    subgraph = extract_class_subgraphs(
+                        subgraph, self.planes, label_index
                     )
-                self._single_plot(
-                    style=style,
-                    subplot=subplot_row[plane_index],
-                    distances=distance,
-                    importances=importance,
-                    nexus_importances=nexus,
-                )
+
+                distances = self._extract_length(subgraph)
+
+                for plane_index, plane in enumerate(self.planes):
+                    importance = extract_edge_weights(
+                        subgraph, plane, return_value=True
+                    )
+                    distance = distances[plane]
+
+                    subplot_row[plane_index].set_ylabel(plane)
+                    nexus = None
+                    if self.include_nexus:
+                        nexus = extract_edge_weights(
+                            subgraph, plane, return_value=True, nexus=True
+                        )
+                    self._single_plot(
+                        style=style,
+                        subplot=subplot_row[plane_index],
+                        distances=distance,
+                        importances=importance,
+                        nexus_importances=nexus,
+                    )
+            except IndexError:
+                pass
 
     def _linreg_fit(self, x, y):
         from scipy.stats import linregress

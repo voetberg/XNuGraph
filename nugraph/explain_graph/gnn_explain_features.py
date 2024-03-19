@@ -1,3 +1,4 @@
+import copy
 import os
 import json
 from torch_geometric.explain import ModelConfig
@@ -11,7 +12,8 @@ from nugraph.explain_graph.algorithms.class_hetero_gnnexplainer import (
 )
 from nugraph.explain_graph.gnn_explain_edges import GlobalGNNExplain
 from nugraph.explain_graph.utils.node_visuals import NodeVisuals
-from nugraph.explain_graph.utils.edge_visuals import EdgeVisuals
+from nugraph.explain_graph.utils.edge_visuals import EdgeVisuals, EdgeLengthDistribution
+from nugraph.explain_graph.utils import get_masked_graph, MaskStrats
 
 
 class GNNExplainFeatures(GlobalGNNExplain):
@@ -50,6 +52,7 @@ class GNNExplainFeatures(GlobalGNNExplain):
             model_config=model_config,
             node_mask_type="attributes",
         )
+        self.classes = ["correct", "incorrect"]
 
     def get_explaination_subgraph(self, explaination):
         return explaination
@@ -108,7 +111,7 @@ class GNNExplainerHits(GlobalGNNExplain):
         test: bool = False,
         planes=["u", "v", "y"],
         message_passing_steps=5,
-        n_epochs=200,
+        n_epochs=250,
     ) -> None:
         self.planes = planes
         super().__init__(
@@ -139,6 +142,8 @@ class GNNExplainerHits(GlobalGNNExplain):
             node_mask_type="attributes",
             edge_mask_type="object",
         )
+        self.explainations = {}
+        self.classes = ["correct", "incorrect"]
 
     def explain(self, data):
         try:
@@ -146,9 +151,12 @@ class GNNExplainerHits(GlobalGNNExplain):
         except Exception:
             data = [data]
 
-        for graph, nodes in zip(data, self.node_list.values()):
+        indices = self.node_list.keys()
+        graph_indices = range(len(indices))
+        for graph_index, nodes, index in zip(
+            graph_indices, self.node_list.values(), indices
+        ):
             single_graph = {}
-            index = len(self.metrics.keys())
             self.metrics[index] = {}
 
             for criteron, n in nodes.items():
@@ -160,29 +168,92 @@ class GNNExplainerHits(GlobalGNNExplain):
                 for name, active_nodes in zip(
                     ["correct", "incorrect"], [correct, incorrect]
                 ):
-                    explaination = self.explainer(graph=graph, nodes=active_nodes)
-                    metrics = self.calculate_metrics(explaination)
+                    if sum([len(active_nodes[plane]) for plane in self.planes]) != 0:
+                        explain_graph = copy.deepcopy(data[graph_index])
+                        explaination = self.explainer(
+                            graph=explain_graph, nodes=active_nodes
+                        )
+                        metrics = self.calculate_metrics(explaination)
 
-                    single_graph[criteron][name] = explaination
-                    self.metrics[index][criteron][name] = metrics
+                        single_graph[criteron][name] = explaination
+                        self.metrics[index][criteron][name] = metrics
 
-            self.explainations.append(single_graph)
-            return self.explainations
+            self.explainations[index] = single_graph
+        return self.explainations
 
     def get_explaination_subgraph(self, explaination):
-        return explaination
+        edge_mask = explaination.collect("edge_mask")
+        node_mask = explaination.collect("node_mask")
+        return get_masked_graph(
+            explaination,
+            edge_mask=edge_mask,
+            node_mask=node_mask,
+            planes=self.planes,
+            mask_strategy=MaskStrats.top_quartile,
+        )
 
     def visualize(self, explaination, *args, **kwargs):
-        for index, explain in enumerate(explaination):
-            subgraphs = []
+        node_plotter = NodeVisuals(
+            self.out_path,
+            planes=self.planes,
+            ghost_overall=True,
+            semantic_classes=self.classes,
+        )
+        edge_plotter = EdgeVisuals(planes=self.planes, semantic_classes=self.classes)
+        edge_length_plotter = EdgeLengthDistribution(
+            out_path=self.out_path,
+            include_nexus=False,
+            planes=self.planes,
+            semantic_classes=self.classes,
+        )
 
-            EdgeVisuals(
-                planes=self.planes, semantic_classes=["correct", "incorrect"]
-            ).plot(
-                graph=subgraphs,
-                ghost_plot=explain,
-                outdir=self.out_path,
-                file_name=f"filter_subgraphs_{index}.png",
-                nexus_distribution=False,
-                class_plot=True,
-            )
+        for index, explain in explaination.items():
+            ghost_plot = None
+            for key, value in explain.items():
+                file_name = f"{key}_{index}"
+                if "correct" in explain[key].keys():
+                    ghost_plot = explain[key]["correct"]
+
+                elif "incorrect" in explain[key].keys():
+                    ghost_plot = explain[key]["incorrect"]
+
+                subgraphs = [subgraph_mask for subgraph_mask in value.values()]
+                subgraph_masked = [self.get_explaination_subgraph(g) for g in subgraphs]
+
+                if len(subgraphs) != 0:
+                    edge_plotter.plot(
+                        graph=subgraph_masked,
+                        ghost_plot=ghost_plot,
+                        outdir=self.out_path,
+                        file_name=f"filter_subgraphs_{file_name}.png",
+                        title=f"{key} Score: {round(self.node_list[index][key]['num_correct'], 4)}",
+                        nexus_distribution=False,
+                        class_plot=True,
+                    )
+
+                    node_plotter.plot(
+                        style="hist",
+                        graph=subgraphs,
+                        split="plane",
+                        file_name=f"{file_name}_histogram.png",
+                    )
+
+                    node_plotter.plot(
+                        style="hist2d",
+                        graph=subgraphs,
+                        split="plane",
+                        file_name=f"{file_name}_histd2_plane.png",
+                    )
+                    edge_length_plotter.plot(
+                        graph=subgraphs,
+                        style="scatter",
+                        split="all",
+                        file_name=f"{file_name}_length_corr.png",
+                    )
+
+                    edge_length_plotter.plot(
+                        graph=subgraphs,
+                        style="histogram",
+                        split="all",
+                        file_name=f"{file_name}_length_dist.png",
+                    )

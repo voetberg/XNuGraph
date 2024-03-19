@@ -28,8 +28,8 @@ explainations = {
 def configure():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--checkpoint",
-        "-c",
+        "--model",
+        "-m",
         type=str,
         help="Trained model checkpoint to test",
         default="/wclustre/fwk/exatrkx/data/uboone/CHEP2023/paper.ckpt",
@@ -68,7 +68,7 @@ def configure():
     )
     parser.add_argument(
         "--message_passing_steps",
-        "-m",
+        "-s",
         nargs="+",
         type=int,
         help="Different message passing steps to use - runs an explaination for each",
@@ -85,7 +85,7 @@ def run_explaination(
         file_name = "test"
 
     for n_steps in message_passing_steps:
-        exp_outfile = f"{outfile.rstrip('/')}/{algorithm}_{n_steps}_steps/"
+        exp_outfile = f"{outfile.rstrip('/')}/{algorithm}_{n_steps}_steps/{file_name}/"
 
         explain = explainations[algorithm](
             data_path=data_path,
@@ -106,7 +106,7 @@ def run_explaination(
 if __name__ == "__main__":
     args = configure()
     run_explaination(
-        args.checkpoint,
+        args.model,
         args.algorithm,
         args.outfile,
         args.data_path,

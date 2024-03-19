@@ -65,8 +65,7 @@ class NodeVisuals:
         }[style](subplot, importances, position)
 
     def _hist(self, subplot, importances, position):
-        for row in range(importances.shape[1]):
-            subplot.hist(importances[:, row], alpha=0.65, label=row)
+        subplot.hist(importances, alpha=0.65)
         subplot.legend()
 
     def _hist_2d(self, subplot, importances, position):
@@ -107,10 +106,17 @@ class NodeVisuals:
 
     def _plot_planewise(self, graph, style, subplots):
         if style != "heat":
-            plane_importances = [
-                graph[index].collect("node_mask") for index in graph.keys()
-            ]
-            plane_positions = [graph[index].collect("pos") for index in graph.keys()]
+            try:
+                plane_importances = [
+                    graph[index].collect("node_mask") for index in graph.keys()
+                ]
+                plane_positions = [
+                    graph[index].collect("pos") for index in graph.keys()
+                ]
+
+            except AttributeError:
+                plane_importances = [g.collect("node_mask") for g in graph]
+                plane_positions = [g.collect("pos") for g in graph]
 
             for plane_index, plane in enumerate(self.planes):
                 importance = np.concatenate(

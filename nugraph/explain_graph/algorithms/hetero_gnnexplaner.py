@@ -263,6 +263,7 @@ class HeteroGNNExplainer(GNNExplainer):
 
             if node_index is not None:
                 assert y_hat.keys() == node_index.keys()
+                print(node_index)
                 y_compare = torch.concat([y[key][node_index[key]] for key in y.keys()])
                 y_hat = torch.concat(
                     [y_hat[key][node_index[key]] for key in y_hat.keys()]

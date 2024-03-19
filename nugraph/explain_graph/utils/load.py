@@ -81,7 +81,8 @@ class Load:
     def load_data(self, data_path, batch_size=16, n_batches=None):
         try:
             data = H5DataModule(data_path, batch_size=batch_size).val_dataloader()
-        except Exception:
+        except Exception as e:
+            print(f"WARNING: {e}, loading 'test' samples.")
             data = DataLoader(
                 H5Dataset(data_path, samples=["test"]), batch_size=batch_size
             )
@@ -90,11 +91,13 @@ class Load:
             data = DataLoader(data.dataset[n_batches:], batch_size=batch_size)
 
         if "batch" in data.dataset[0]["u"].keys():
+            print("INFO: Batching Data")
             indices = data.dataset[0].collect("batch")["u"].unique()
             batches = [self.single_graphs(data.dataset[0], index) for index in indices]
             return batches
 
         else:
+            print("INFO: returning dataset as dataset object.")
             return data.dataset
 
     def load_test_data(self, data_path, batch_size=1):

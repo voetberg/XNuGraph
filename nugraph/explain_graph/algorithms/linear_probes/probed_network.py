@@ -52,8 +52,10 @@ class ProbedNetwork:
             self.semantic_classes
         )  # self.model.decoders[0].net[self.planes[0]].net[0].weight.shape[-1]
 
-        def linear_net(input_shape): 
-            return StaticLinearDecoder(input_shape, self.planes, len(self.semantic_classes))
+        def linear_net(input_shape):
+            return StaticLinearDecoder(
+                input_shape, self.planes, len(self.semantic_classes)
+            )
 
         self.input_decoder = linear_net((input_inshape, len(self.semantic_classes)))
         self.encoder_decoder = linear_net(
@@ -219,11 +221,15 @@ class DynamicProbedNetwork(ProbedNetwork):
         self.make_probes()
 
     def make_probes(self):
-        def probe(in_shape): 
-            return DynamicLinearDecoder((in_shape, 1), self.planes, len(self.semantic_classes)).cuda()
-        def train_probe_track(probe): 
+        def probe(in_shape):
+            return DynamicLinearDecoder(
+                (in_shape, 1), self.planes, len(self.semantic_classes)
+            ).cuda()
+
+        def train_probe_track(probe):
             return TrainProbes(probe, loss_function="tracks")
-        def train_probe_hipmip(probe): 
+
+        def train_probe_hipmip(probe):
             return TrainProbes(probe, loss_function="hipmip")
 
         encoder_inshape = (
