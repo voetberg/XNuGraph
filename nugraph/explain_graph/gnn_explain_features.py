@@ -209,26 +209,31 @@ class GNNExplainerHits(GlobalGNNExplain):
 
         for index, explain in explaination.items():
             ghost_plot = None
-            for key, value in explain.items():
-                file_name = f"{key}_{index}"
-                if "correct" in explain[key].keys():
-                    ghost_plot = explain[key]["correct"]
+            for criteron, value in explain.items():
+                file_name = f"{criteron}_{index}"
+                if "correct" in explain[criteron].keys():
+                    ghost_plot = explain[criteron]["correct"]
 
-                elif "incorrect" in explain[key].keys():
-                    ghost_plot = explain[key]["incorrect"]
+                elif "incorrect" in explain[criteron].keys():
+                    ghost_plot = explain[criteron]["incorrect"]
 
                 subgraphs = [subgraph_mask for subgraph_mask in value.values()]
                 subgraph_masked = [self.get_explaination_subgraph(g) for g in subgraphs]
 
+                key_hits = {
+                    "correct": self.node_list[index][criteron]["correct_hits"],
+                    "incorrect": self.node_list[index][criteron]["incorrect_hits"],
+                }
                 if len(subgraphs) != 0:
                     edge_plotter.plot(
                         graph=subgraph_masked,
                         ghost_plot=ghost_plot,
                         outdir=self.out_path,
                         file_name=f"filter_subgraphs_{file_name}.png",
-                        title=f"{key} Score: {round(self.node_list[index][key]['num_correct'], 4)}",
+                        title=f"{criteron} Score: {round(self.node_list[index][criteron]['num_correct'], 4)}",
                         nexus_distribution=False,
                         class_plot=True,
+                        key_hits=key_hits,
                     )
 
                     node_plotter.plot(
@@ -243,6 +248,7 @@ class GNNExplainerHits(GlobalGNNExplain):
                         graph=subgraphs,
                         split="plane",
                         file_name=f"{file_name}_histd2_plane.png",
+                        key_hits=key_hits,
                     )
                     edge_length_plotter.plot(
                         graph=subgraphs,

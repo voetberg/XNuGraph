@@ -10,9 +10,19 @@ planes = ["u", "v", "y"]
 
 
 def hip_criteron(graph_prediction, graph_true):
+    num_possible = {plane: len((graph_true[plane] == 1).nonzero()) for plane in planes}
+    if sum([num_possible[plane] for plane in planes]) == 0:
+        return {
+            "per_correct": np.NaN,
+            "per_incorrect": np.NaN,
+            "correct_hits": {plane: [] for plane in planes},
+            "incorrect_hits": {plane: [] for plane in planes},
+        }
     num_possible = {
-        plane: len((graph_true[plane] == 1).nonzero()) + 10 ** (-8) for plane in planes
+        plane: num_possible[plane] if num_possible[plane] != 0 else 1
+        for plane in planes
     }
+
     is_correct = {
         plane: torch.logical_and(graph_prediction[plane] == 1, graph_true[plane] == 1)
         for plane in planes
@@ -27,20 +37,16 @@ def hip_criteron(graph_prediction, graph_true):
     mip_index = {
         plane: is_labeled_mip[plane].nonzero(as_tuple=True)[0] for plane in planes
     }
-
+    total_possible = sum([num_possible[plane] for plane in planes])
     return {
-        "num_correct": sum(
-            [len(correct_index[plane]) / num_possible[plane] for plane in planes]
-        ),
-        "num_incorrect": sum(
-            [len(mip_index[plane]) / num_possible[plane] for plane in planes]
-        ),
-        "num_correct_plane": {
-            plane: len(correct_index[plane]) / num_possible[plane] for plane in planes
-        },
-        "num_incorrect_plane": {
-            plane: len(mip_index[plane]) / num_possible[plane] for plane in planes
-        },
+        "per_correct": len(
+            torch.concat([correct_index[plane] for plane in planes]).unique()
+        )
+        / total_possible,
+        "per_incorrect": len(
+            torch.concat([mip_index[plane] for plane in planes]).unique()
+        )
+        / total_possible,
         "correct_hits": {
             plane: correct_index[plane].numpy().tolist() for plane in planes
         },
@@ -51,15 +57,27 @@ def hip_criteron(graph_prediction, graph_true):
 
 
 def michel_criteon(graph_prediction, graph_true):
+    num_possible = {plane: len((graph_true[plane] == 4).nonzero()) for plane in planes}
+    if sum([num_possible[plane] for plane in planes]) == 0:
+        return {
+            "per_correct": np.NaN,
+            "per_incorrect": np.NaN,
+            "correct_hits": {plane: [] for plane in planes},
+            "incorrect_hits": {plane: [] for plane in planes},
+        }
     num_possible = {
-        plane: len((graph_true[plane] == 4).nonzero()) + 10**-8 for plane in planes
+        plane: num_possible[plane] if num_possible[plane] != 0 else 1
+        for plane in planes
     }
     is_correct = {
         plane: torch.logical_and(graph_prediction[plane] == 4, graph_true[plane] == 4)
         for plane in planes
     }
     is_incorrect = {
-        plane: torch.logical_and(graph_prediction[plane] == 4, graph_true[plane] != 4)
+        plane: torch.logical_or(
+            torch.logical_and(graph_prediction[plane] == 4, graph_true[plane] != 4),
+            torch.logical_and(graph_prediction[plane] != 4, graph_true[plane] == 4),
+        )
         for plane in planes
     }
     correct_index = {
@@ -68,20 +86,16 @@ def michel_criteon(graph_prediction, graph_true):
     incorrect_index = {
         plane: is_incorrect[plane].nonzero(as_tuple=True)[0] for plane in planes
     }
-
+    total_possible = sum([num_possible[plane] for plane in planes])
     return {
-        "num_correct": sum(
-            [len(correct_index[plane]) / num_possible[plane] for plane in planes]
-        ),
-        "num_incorrect": sum(
-            [len(incorrect_index[plane]) / num_possible[plane] for plane in planes]
-        ),
-        "num_correct_plane": {
-            plane: len(correct_index[plane]) / num_possible[plane] for plane in planes
-        },
-        "num_incorrect_plane": {
-            plane: len(incorrect_index[plane]) / num_possible[plane] for plane in planes
-        },
+        "per_correct": len(
+            torch.concat([correct_index[plane] for plane in planes]).unique()
+        )
+        / total_possible,
+        "per_incorrect": len(
+            torch.concat([incorrect_index[plane] for plane in planes]).unique()
+        )
+        / total_possible,
         "correct_hits": {
             plane: correct_index[plane].numpy().tolist() for plane in planes
         },
@@ -118,39 +132,25 @@ def evaluate_graph(graph, criteons: list):
 if __name__ == "__main__":
     checkpoint = "./paper.ckpt"
     data_path = "./analysis_subset.h5"
-    out_path = "./hip_mip_michel_local"
+    out_path = "./hip_mip_michel_local_revision"
 
     load = Load(checkpoint_path=checkpoint, data_path=data_path)
 
-    results = {}
+    results = []
     for index, graph in enumerate(load.data):
-        results[index] = evaluate_graph(graph, criteons=[hip_criteron, michel_criteon])
+        results.append(evaluate_graph(graph, criteons=[hip_criteron, michel_criteon]))
 
     keep_indices = [
-        np.argmax(
-            [result["hip_criteron"]["num_correct"] for result in results.values()]
-        ),
-        np.argmax(
-            [result["hip_criteron"]["num_incorrect"] for result in results.values()]
-        ),
-        np.argmax(
-            [result["michel_criteon"]["num_correct"] for result in results.values()]
-        ),
-        np.argmax(
-            [result["michel_criteon"]["num_incorrect"] for result in results.values()]
-        ),
+        np.nanargmax([result["hip_criteron"]["per_correct"] for result in results]),
+        np.nanargmax([result["hip_criteron"]["per_incorrect"] for result in results]),
+        np.nanargmax([result["michel_criteon"]["per_correct"] for result in results]),
+        np.nanargmax([result["michel_criteon"]["per_incorrect"] for result in results]),
+        np.nanargmin([result["michel_criteon"]["per_correct"] for result in results]),
+        np.nanargmin([result["hip_criteron"]["per_correct"] for result in results]),
+        np.nanargmin([result["michel_criteon"]["per_incorrect"] for result in results]),
+        np.nanargmin([result["hip_criteron"]["per_incorrect"] for result in results]),
     ]
-    if len(keep_indices) != len(set(keep_indices)):
-        keep_indices.append(
-            np.argmin(
-                [result["michel_criteon"]["num_correct"] for result in results.values()]
-            )
-        )
-        keep_indices.append(
-            np.argmin(
-                [result["michel_criteon"]["num_correct"] for result in results.values()]
-            )
-        )
+    print(keep_indices)
 
     keep_dict = {int(key): results[key] for key in keep_indices}
     selected_data = [load.data[index] for index in keep_indices]
