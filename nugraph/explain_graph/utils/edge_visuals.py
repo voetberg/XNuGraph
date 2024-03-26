@@ -2,6 +2,7 @@ from copy import deepcopy
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import networkx as nx
 import plotly.graph_objects as go
 
@@ -64,8 +65,8 @@ class EdgeVisuals:
             pos=position,
             with_labels=False,
             width=1,
-            node_color="black",
-            node_size=2,
+            node_color="grey",
+            node_size=1,
             edge_color="grey",
             alpha=0.2,
             ax=axes,
@@ -171,6 +172,53 @@ class EdgeVisuals:
                 )
             except IndexError:
                 pass
+
+    def event_plot(self, graph, outdir, file_name="event_display.png", title=""):
+        n_yplot = 2
+        n_xplot = len(self.planes)
+        figure, subplots = plt.subplots(
+            n_yplot, n_xplot, figsize=(6 * n_xplot, 8 * n_yplot)
+        )
+        colors = [
+            "grey",
+            "darkorange",
+            "dodgerblue",
+            "limegreen",
+            "palevioletred",
+            "indigo",
+        ]
+        color_map = {index: color for index, color in zip([-1, 0, 1, 2, 3, 4], colors)}
+
+        handles = [
+            mpatches.Patch(color=color, label=label)
+            for label, color in color_map.items()
+        ]
+
+        for plane, subplot in zip(self.planes, subplots.T):
+            self.draw_ghost_plot(graph, plane, subplot[0])
+            self.draw_ghost_plot(graph, plane, subplot[1])
+
+            x, y = graph.collect("pos")[plane][:, 0], graph.collect("pos")[plane][:, 1]
+            true_labels = graph.collect("y_semantic")[plane]
+            predict_label = torch.argmax(graph.collect("x_semantic")[plane], axis=1)
+
+            subplot[0].scatter(
+                x, y, c=[color_map[label.item()] for label in true_labels]
+            )
+            subplot[1].scatter(
+                x, y, c=[color_map[label.item()] for label in predict_label]
+            )
+
+        subplots[0][0].set_ylabel("Truth")
+        subplots[1][0].set_ylabel("Prediction")
+        subplots[0][-1].legend(handles=handles)
+        subplots[1][-1].legend(handles=handles)
+
+        figure.supxlabel("wire")
+        figure.supylabel("time")
+        figure.suptitle(title)
+
+        plt.savefig(f"{outdir.rstrip('/')}/{file_name}")
 
 
 class EdgeLengthDistribution:

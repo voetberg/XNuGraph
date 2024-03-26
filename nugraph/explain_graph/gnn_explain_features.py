@@ -236,6 +236,12 @@ class GNNExplainerHits(GlobalGNNExplain):
                         key_hits=key_hits,
                     )
 
+                    edge_plotter.event_plot(
+                        graph=ghost_plot,
+                        outdir=self.out_path,
+                        file_name=f"{file_name}_event_display.png",
+                    )
+
                     node_plotter.plot(
                         style="hist",
                         graph=subgraphs,
