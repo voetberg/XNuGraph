@@ -10,7 +10,7 @@ from nugraph.explain_graph.algorithms.hetero_gnnexplaner import (
 from nugraph.explain_graph.algorithms.class_hetero_gnnexplainer import (
     MultiEdgeHeteroGNNExplainer,
 )
-from nugraph.explain_graph.gnn_explain_edges import GlobalGNNExplain
+from nugraph.explain_graph.explain_edges import GlobalGNNExplain
 from nugraph.explain_graph.utils.node_visuals import NodeVisuals
 from nugraph.explain_graph.utils.edge_visuals import EdgeVisuals, EdgeLengthDistribution
 from nugraph.explain_graph.utils import get_masked_graph, MaskStrats
@@ -36,7 +36,7 @@ class GNNExplainFeatures(GlobalGNNExplain):
             batch_size,
             test,
             message_passing_steps=message_passing_steps,
-            n_epochs=n_epochs,
+            n_epochs=2,
         )
 
         model_config = ModelConfig(
@@ -111,7 +111,7 @@ class GNNExplainerHits(GlobalGNNExplain):
         test: bool = False,
         planes=["u", "v", "y"],
         message_passing_steps=5,
-        n_epochs=250,
+        n_epochs=150,
     ) -> None:
         self.planes = planes
         super().__init__(
@@ -152,6 +152,7 @@ class GNNExplainerHits(GlobalGNNExplain):
             data = [data]
 
         indices = self.node_list.keys()
+        indices = ["14504"]
         graph_indices = range(len(indices))
         for graph_index, nodes, index in zip(
             graph_indices, self.node_list.values(), indices
@@ -196,7 +197,6 @@ class GNNExplainerHits(GlobalGNNExplain):
         node_plotter = NodeVisuals(
             self.out_path,
             planes=self.planes,
-            ghost_overall=True,
             semantic_classes=self.classes,
         )
         edge_plotter = EdgeVisuals(planes=self.planes, semantic_classes=self.classes)
@@ -220,10 +220,6 @@ class GNNExplainerHits(GlobalGNNExplain):
                 subgraphs = [subgraph_mask for subgraph_mask in value.values()]
                 subgraph_masked = [self.get_explaination_subgraph(g) for g in subgraphs]
 
-                key_hits = {
-                    "correct": self.node_list[index][criteron]["correct_hits"],
-                    "incorrect": self.node_list[index][criteron]["incorrect_hits"],
-                }
                 if len(subgraphs) != 0:
                     edge_plotter.plot(
                         graph=subgraph_masked,
@@ -233,7 +229,6 @@ class GNNExplainerHits(GlobalGNNExplain):
                         title=f"{criteron} Score: {round(self.node_list[index][criteron]['num_correct'], 4)}",
                         nexus_distribution=False,
                         class_plot=True,
-                        key_hits=key_hits,
                     )
 
                     edge_plotter.event_plot(
@@ -242,6 +237,10 @@ class GNNExplainerHits(GlobalGNNExplain):
                         file_name=f"{file_name}_event_display.png",
                     )
 
+                    node_plotter.plot_confience(
+                        graph=subgraphs,
+                        file_name=f"{file_name}_confience_display.png",
+                    )
                     node_plotter.plot(
                         style="hist",
                         graph=subgraphs,
@@ -254,7 +253,6 @@ class GNNExplainerHits(GlobalGNNExplain):
                         graph=subgraphs,
                         split="plane",
                         file_name=f"{file_name}_histd2_plane.png",
-                        key_hits=key_hits,
                     )
                     edge_length_plotter.plot(
                         graph=subgraphs,

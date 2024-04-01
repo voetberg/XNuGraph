@@ -284,7 +284,7 @@ class EdgeLengthDistribution:
         }[split]
 
         figure, subplots = plt.subplots(
-            nrows=n_rows, ncols=n_cols, figsize=(6 * n_cols, 6 * n_rows)
+            nrows=n_rows, ncols=n_cols, figsize=(6 * n_cols, 6 * n_rows), sharex=True
         )
 
         {

@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.interpolate import Rbf
-from nugraph.explain_graph.utils.edge_visuals import EdgeVisuals
 from nugraph.explain_graph.utils.visuals_common import highlight_nodes
 
 
@@ -12,18 +11,47 @@ class NodeVisuals:
         planes=["u", "v", "y"],
         semantic_classes=["MIP", "HIP", "shower", "michel", "diffuse"],
         percentile=0.3,
-        ghost_overall=False,
         n_bins=30,
     ) -> None:
         self.out_path = out_path
         self.planes = planes
         self.semantic_classes = semantic_classes
         self.percentile = percentile
-        self.draw_ghost = ghost_overall
         self.n_bins = n_bins
 
+    def plot_confience(self, graph, file_name):
+        n_cols = len(self.planes)
+        n_rows = 1
+
+        figure, subplots = plt.subplots(
+            nrows=n_rows, ncols=n_cols, figsize=(3 * n_cols, 3 * n_rows)
+        )
+        subgraph = graph[0]
+        positions = subgraph.collect("pos")
+        position = np.concatenate([positions[plane] for plane in self.planes])
+
+        for plane_index, plane in enumerate(self.planes):
+            largest = np.max(np.array(subgraph.collect("x_semantic")[plane]), axis=1)
+            second = np.partition(
+                np.array(subgraph.collect("x_semantic")[plane]), axis=1, kth=-2
+            )[-2]
+            confidence = largest - second
+
+            position = positions[plane]
+            self._single_plot(
+                "event",
+                subplots[plane_index],
+                confidence,
+                position,
+            )
+
+        figure.supxlabel("Time")
+        figure.supylabel("Wire Number")
+        plt.tight_layout()
+        plt.savefig(f"{self.out_path.rstrip('/')}/{file_name}")
+
     def plot(self, style, graph, split="class", file_name="plot.png", key_hits=None):
-        assert style in ["hist", "hist2d", "heat"]
+        assert style in ["hist", "hist2d", "heat", "event"]
 
         n_features = graph[0].collect("x")[self.planes[0]].shape[1]
         n_rows = {
@@ -63,6 +91,7 @@ class NodeVisuals:
             "hist": self._hist,
             "hist2d": self._hist_2d,
             "heat": self._heat,
+            "event": self._event,
         }[style](subplot, importances, position)
 
     def _hist(self, subplot, importances, position):
@@ -87,6 +116,10 @@ class NodeVisuals:
 
         contours = np.linspace(z.min(), z.max(), self.n_bins)
         subplot.contourf(x, y, z, levels=contours)
+
+    def _event(self, subplot, importances, position):
+        x, y = position[:, 0], position[:, 1]
+        subplot.scatter(x, y, c=importances)
 
     def _plot_classwise(self, graph, style, subplots, key_hits=None):
         for label_index, label in enumerate(self.semantic_classes):
@@ -133,10 +166,7 @@ class NodeVisuals:
                         position,
                     )
                     subplots[0][plane_index].set_title([plane])
-                    if self.draw_ghost and style != "hist":
-                        EdgeVisuals(planes=self.planes).draw_ghost_plot(
-                            graph[0], plane=plane, axes=subplots[feature][plane_index]
-                        )
+
                     if (
                         (key_hits is not None)
                         and (style != "hist")
@@ -187,10 +217,7 @@ class NodeVisuals:
                     positions[plane],
                 )
                 subplot_row[plane_index].set_ylabel(plane)
-                if self.draw_ghost and style != "hist":
-                    EdgeVisuals(planes=self.planes).draw_ghost_plot(
-                        subgraph, plane=plane, axes=subplot_row[plane_index]
-                    )
+
                 if (key_hits is not None) and (style == "hist2d"):
                     highlight_nodes(
                         graph=graph[0][plane],

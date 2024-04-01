@@ -1,11 +1,11 @@
 from nugraph.explain_graph.explainer_probes import ExplainNetwork, DynamicExplainNetwork
 
-from nugraph.explain_graph.gnn_explain_edges import (
+from nugraph.explain_graph.explain_edges import (
     GlobalGNNExplain,
     GNNExplainerPrune,
     ClasswiseGNNExplain,
 )
-from nugraph.explain_graph.gnn_explain_features import (
+from nugraph.explain_graph.explain_features import (
     GNNExplainerHits,
     GNNExplainFeatures,
 )
