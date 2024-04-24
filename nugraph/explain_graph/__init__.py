@@ -10,6 +10,8 @@ from nugraph.explain_graph.explain_features import (
     GNNExplainFeatures,
 )
 
+from nugraph.explain_graph.explain_difference import GNNExplainerDifference
+
 __all__ = [
     "ExplainNetwork",
     "DynamicExplainNetwork",
@@ -18,4 +20,5 @@ __all__ = [
     "ClasswiseGNNExplain",
     "GNNExplainerHits",
     "GNNExplainFeatures",
+    "GNNExplainerDifference",
 ]

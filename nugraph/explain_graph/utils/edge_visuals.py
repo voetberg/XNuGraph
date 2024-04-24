@@ -8,7 +8,6 @@ import plotly.graph_objects as go
 
 import torch
 import pandas as pd
-import math
 
 import matplotlib.colors as colors
 import matplotlib.cm as cmx
@@ -76,22 +75,47 @@ class EdgeVisuals:
 
     def plot_nexus_weights(self, graph, plot):
         """Plot a histogram of the nexus edge weights"""
-        edge_weight = nexus_edges = graph.collect("edge_mask")
-        for plane in self.planes:
-            nexus_edges = edge_weight[(plane, "nexus", "sp")]
+        edge_weight = graph.collect("edge_mask")
+        colors = ["darkorange", "dodgerblue", "limegreen"]
 
-            bins = math.ceil(math.sqrt(len(nexus_edges)))
-            bins = bins if bins != 0 else 10
-            plot.hist(nexus_edges, alpha=0.6, label=plane, bins=bins)
+        handles = [
+            mpatches.Patch(color=color, label=label)
+            for label, color in zip(self.planes, colors)
+        ]
+
+        for plane_index, plane in enumerate(self.planes):
+            nexus_edges = edge_weight[(plane, "nexus", "sp")]
+            pos = graph.collect("pos")[plane]
+
+            for enum, hit in enumerate(nexus_edges):
+                planar_hit = pos[enum][0]
+                hits_y = [
+                    planar_hit,  # planar hit
+                    enum + planar_hit,  # nexus hit
+                ]
+
+                plot.plot([0, 1], hits_y, lw=hit * 2, c=colors[plane_index], alpha=0.05)
+
+            # bins = math.ceil(math.sqrt(len(nexus_edges)))
+            # bins = bins if bins != 0 else 10
+            # plot.hist(nexus_edges, alpha=0.6, label=plane, bins=bins)
 
         plot.set_title("Nexus Weight Importance")
-        plot.legend()
+
+        plot.set_yticks([0, 1])
+        plot.set_xticks([0, 1], labels=["Planar", "Nexus"])
+        plot.set_xlim(-0.2, 1.2)
+
+        plot.legend(handles=handles)
 
     def _single_plot(
         self, graph, ghost_plot, subplots, nexus_distribution, key_hits=None
     ):
         if ghost_plot is None:
             ghost_plot = graph
+
+        if nexus_distribution:
+            self.plot_nexus_weights(graph, subplots[-1])
 
         for plane, subplot in zip(self.planes, subplots):
             self.draw_ghost_plot(ghost_plot, plane, axes=subplot)
@@ -104,9 +128,6 @@ class EdgeVisuals:
                 )
 
             subplot.set_title(plane)
-
-        if nexus_distribution:
-            self.plot_nexus_weights(graph, subplots[-1])
 
         plt.colorbar(
             cmx.ScalarMappable(
@@ -135,7 +156,9 @@ class EdgeVisuals:
             ghost_plot = graph
 
         if class_plot:
-            self._plot_classes(graph, ghost_plot, subplots, key_hits)
+            self._plot_classes(
+                graph, ghost_plot, subplots, nexus_distribution, key_hits
+            )
         else:
             self._single_plot(graph, ghost_plot, subplots, nexus_distribution, key_hits)
 
@@ -145,7 +168,9 @@ class EdgeVisuals:
 
         plt.savefig(f"{outdir.rstrip('/')}/{file_name}")
 
-    def _plot_classes(self, graph, ghost_plot, subplots, key_hits=None):
+    def _plot_classes(
+        self, graph, ghost_plot, subplots, nexus_distribution, key_hits=None
+    ):
         if ghost_plot is None:
             ghost_plot = deepcopy(graph)
         if not isinstance(graph, list):
@@ -167,14 +192,14 @@ class EdgeVisuals:
                     class_graph,
                     ghost_plot,
                     subplot_row,
-                    nexus_distribution=False,
+                    nexus_distribution=nexus_distribution,
                     key_hits=class_hits,
                 )
             except IndexError:
                 pass
 
     def event_plot(self, graph, outdir, file_name="event_display.png", title=""):
-        n_yplot = 2
+        n_yplot = 3
         n_xplot = len(self.planes)
         figure, subplots = plt.subplots(
             n_yplot, n_xplot, figsize=(6 * n_xplot, 8 * n_yplot)
@@ -187,7 +212,8 @@ class EdgeVisuals:
             "palevioletred",
             "indigo",
         ]
-        color_map = {index: color for index, color in zip([-1, 0, 1, 2, 3, 4], colors)}
+        labels_classes = [-1] + self.semantic_classes
+        color_map = {index: color for index, color in zip(labels_classes, colors)}
 
         handles = [
             mpatches.Patch(color=color, label=label)
@@ -197,20 +223,31 @@ class EdgeVisuals:
         for plane, subplot in zip(self.planes, subplots.T):
             self.draw_ghost_plot(graph, plane, subplot[0])
             self.draw_ghost_plot(graph, plane, subplot[1])
+            self.draw_ghost_plot(graph, plane, subplot[2])
 
             x, y = graph.collect("pos")[plane][:, 0], graph.collect("pos")[plane][:, 1]
             true_labels = graph.collect("y_semantic")[plane]
             predict_label = torch.argmax(graph.collect("x_semantic")[plane], axis=1)
 
+            largest = np.max(np.array(graph.collect("x_semantic")[plane]), axis=1)
+            second = np.partition(
+                np.array(graph.collect("x_semantic")[plane]).T,
+                kth=-2,
+            )[-2]
+
+            confidence = largest - second
             subplot[0].scatter(
                 x, y, c=[color_map[label.item()] for label in true_labels]
             )
             subplot[1].scatter(
                 x, y, c=[color_map[label.item()] for label in predict_label]
             )
+            subplot[2].scatter(x, y, c=confidence, s=confidence * 10)
 
         subplots[0][0].set_ylabel("Truth")
         subplots[1][0].set_ylabel("Prediction")
+        subplots[2][0].set_ylabel("Prediction Confidence")
+
         subplots[0][-1].legend(handles=handles)
         subplots[1][-1].legend(handles=handles)
 
@@ -448,7 +485,7 @@ class EdgeLengthDistribution:
         importances = data[1]
         subplot.hist(importances, alpha=0.8, label="Plane")
 
-        expected_cut = importances.quantile(1 - self.percentile)
+        expected_cut = np.percentile(importances, self.percentile)
         subplot.axvline(expected_cut, color="black")
 
         if self.include_nexus:

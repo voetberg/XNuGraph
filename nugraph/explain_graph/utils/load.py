@@ -1,6 +1,7 @@
 import torch
 import pytorch_lightning as pl
 import h5py
+import os
 
 from nugraph.models import NuGraph2
 from nugraph.data import H5DataModule, H5Dataset
@@ -23,13 +24,13 @@ class Load:
         planes=["u", "v", "y"],
         n_batches=None,
     ) -> None:
+        assert os.path.exists(data_path)
+        assert os.path.exists(checkpoint_path)
+
         self.message_passing_steps = message_passing_steps
         self.test = test
         self.planes = planes
-        if test:
-            self.data = self.load_data("./test_data.h5", batch_size=1)
-        else:
-            self.data = self.load_data(data_path, batch_size=1)
+        self.data = self.load_data(data_path, batch_size=1)
         try:
             self.model = self.load_checkpoint(checkpoint_path)
 
@@ -71,10 +72,9 @@ class Load:
         return model
 
     def single_graphs(self, dataset, graph_index):
-        batches = dataset.collect("batch")
         nodes = {}
-        for batch in batches:
-            nodes[batch] = batches[batch] == graph_index
+        for plane in self.planes:
+            nodes[plane] = dataset[plane]["batch"] == graph_index
         graph = dataset.subgraph(nodes)
         return graph
 
@@ -90,13 +90,13 @@ class Load:
         if n_batches is not None:
             data = DataLoader(data.dataset[n_batches:], batch_size=batch_size)
 
-        if "batch" in data.dataset[0]["u"].keys():
+        try:
             print("INFO: Batching Data")
-            indices = data.dataset[0].collect("batch")["u"].unique()
-            batches = [self.single_graphs(data.dataset[0], index) for index in indices]
+            events = data.dataset[0]["sp"]["batch"].unique()
+            batches = [self.single_graphs(data.dataset[0], index) for index in events]
             return batches
 
-        else:
+        except IndexError:
             print("INFO: returning dataset as dataset object.")
             return data.dataset
 

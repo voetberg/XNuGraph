@@ -65,7 +65,7 @@ class GlobalGNNExplain(ExplainLocal):
             edge_mask_type="object",
         )
 
-    def get_explaination_subgraph(self, explaination):
+    def get_explanation_subgraph(self, explaination):
         edge_mask = explaination.collect("edge_mask")
         return get_masked_graph(
             explaination,
@@ -79,7 +79,7 @@ class GlobalGNNExplain(ExplainLocal):
             if file_name is None:
                 file_name = f"subgraph_{datetime.now().timestamp()}"
 
-            subgraph = self.get_explaination_subgraph(graph)
+            subgraph = self.get_explanation_subgraph(graph)
             EdgeVisuals(planes=self.planes).plot(
                 graph=subgraph,
                 outdir=self.out_path,
@@ -112,6 +112,21 @@ class GlobalGNNExplain(ExplainLocal):
             h5py.File(f"{self.out_path}/explaination_graphs.h5", "w")
         )
         interface.save_heterodata(save_heterodata)
+
+    def plot_loss(self, file_name):
+        import matplotlib.pyplot as plt
+
+        plt.close("all")
+
+        plt.plot(
+            range(len(self.explainer.algorithm.loss_history)),
+            self.explainer.algorithm.loss_history,
+        )
+        plt.xlabel("Iteration")
+        plt.ylabel("Entropy Loss")
+
+        plt.savefig(file_name)
+        plt.close("all")
 
 
 class ClasswiseGNNExplain(GlobalGNNExplain):
@@ -163,7 +178,7 @@ class ClasswiseGNNExplain(GlobalGNNExplain):
             subgraphs = []
             unmasked_subgraphs = []
             for sub_explain in explain.values():
-                subgraph = self.get_explaination_subgraph(explaination=sub_explain)
+                subgraph = self.get_explanation_subgraph(explaination=sub_explain)
                 subgraphs.append(subgraph)
                 unmasked_subgraphs.append(sub_explain)
 
@@ -247,7 +262,7 @@ class GNNExplainerPrune(GlobalGNNExplain):
         explaination = self.explainer(graph=data)
         return explaination
 
-    def get_explaination_subgraph(self, explaination):
+    def get_explanation_subgraph(self, explaination):
         edge_mask = explaination["edge_mask"]
         masked_graph = get_masked_graph(
             explaination["graph"], edge_mask=edge_mask, planes=self.planes

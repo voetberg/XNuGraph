@@ -25,6 +25,7 @@ class GNNExplainFeatures(GlobalGNNExplain):
         batch_size: int = 16,
         test: bool = False,
         planes=["u", "v", "y"],
+        feature_names=["Wire", "Peak", "Integral", "RMS"],
         message_passing_steps=5,
         n_epochs=200,
     ):
@@ -36,7 +37,7 @@ class GNNExplainFeatures(GlobalGNNExplain):
             batch_size,
             test,
             message_passing_steps=message_passing_steps,
-            n_epochs=2,
+            n_epochs=n_epochs,
         )
 
         model_config = ModelConfig(
@@ -53,8 +54,9 @@ class GNNExplainFeatures(GlobalGNNExplain):
             node_mask_type="attributes",
         )
         self.classes = ["correct", "incorrect"]
+        self.feature_names = feature_names
 
-    def get_explaination_subgraph(self, explaination):
+    def get_explanation_subgraph(self, explaination):
         return explaination
 
     def visualize(self, explaination, file_name="explaination_graph"):
@@ -110,6 +112,7 @@ class GNNExplainerHits(GlobalGNNExplain):
         batch_size: int = 16,
         test: bool = False,
         planes=["u", "v", "y"],
+        feature_names=["Wire", "Peak", "Integral", "RMS"],
         message_passing_steps=5,
         n_epochs=150,
     ) -> None:
@@ -144,6 +147,7 @@ class GNNExplainerHits(GlobalGNNExplain):
         )
         self.explainations = {}
         self.classes = ["correct", "incorrect"]
+        self.feature_names = feature_names
 
     def explain(self, data):
         try:
@@ -182,7 +186,7 @@ class GNNExplainerHits(GlobalGNNExplain):
             self.explainations[index] = single_graph
         return self.explainations
 
-    def get_explaination_subgraph(self, explaination):
+    def get_explanation_subgraph(self, explaination):
         edge_mask = explaination.collect("edge_mask")
         node_mask = explaination.collect("node_mask")
         return get_masked_graph(
@@ -198,6 +202,7 @@ class GNNExplainerHits(GlobalGNNExplain):
             self.out_path,
             planes=self.planes,
             semantic_classes=self.classes,
+            feature_names=self.feature_names,
         )
         edge_plotter = EdgeVisuals(planes=self.planes, semantic_classes=self.classes)
         edge_length_plotter = EdgeLengthDistribution(
@@ -218,7 +223,7 @@ class GNNExplainerHits(GlobalGNNExplain):
                     ghost_plot = explain[criteron]["incorrect"]
 
                 subgraphs = [subgraph_mask for subgraph_mask in value.values()]
-                subgraph_masked = [self.get_explaination_subgraph(g) for g in subgraphs]
+                subgraph_masked = [self.get_explanation_subgraph(g) for g in subgraphs]
 
                 if len(subgraphs) != 0:
                     edge_plotter.plot(
@@ -227,7 +232,7 @@ class GNNExplainerHits(GlobalGNNExplain):
                         outdir=self.out_path,
                         file_name=f"filter_subgraphs_{file_name}.png",
                         title=f"{criteron} Score: {round(self.node_list[index][criteron]['num_correct'], 4)}",
-                        nexus_distribution=False,
+                        nexus_distribution=True,
                         class_plot=True,
                     )
 

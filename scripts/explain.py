@@ -1,9 +1,3 @@
-import os
-import argparse
-from datetime import datetime
-
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-
 from nugraph.explain_graph import (
     GlobalGNNExplain,
     ClasswiseGNNExplain,
@@ -12,7 +6,14 @@ from nugraph.explain_graph import (
     ExplainNetwork,
     DynamicExplainNetwork,
     GNNExplainerHits,
+    GNNExplainerDifference,
 )
+
+import os
+import argparse
+from datetime import datetime
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 explainations = {
     "Edges": GlobalGNNExplain,
@@ -22,6 +23,7 @@ explainations = {
     "DynamicProbe": DynamicExplainNetwork,
     "Prune": GNNExplainerPrune,
     "Hits": GNNExplainerHits,
+    "Difference": GNNExplainerDifference,
 }
 
 

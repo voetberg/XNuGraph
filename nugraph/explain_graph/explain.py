@@ -106,9 +106,5 @@ class ExplainLocal:
         Save the results
         """
 
-        try:
-            self.explainer.algorithm.plot_loss(f"{self.out_path}/exp_loss.png")
-        except AttributeError:
-            pass
-
+        self.plot_loss(f"{self.out_path}/exp_loss.png")
         json.dump(self.metrics, open(f"{self.out_path}/metrics.json", "w"))

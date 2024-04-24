@@ -88,6 +88,7 @@ class HeteroGNNExplainer(GNNExplainer):
         super().__init__(epochs, lr, **kwargs)
         self.planes = planes
         self.loss_history = []
+        self.recall_loss_history = []
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.nexus = nexus
 
@@ -198,12 +199,10 @@ class HeteroGNNExplainer(GNNExplainer):
                 edge_mask = torch.tensor(
                     torch.randn(E) * std, device=self.device, requires_grad=True
                 )
-
                 self.edge_mask[(plane, "nexus", "sp")] = edge_mask
                 self.hard_edge_mask[(plane, "nexus", "sp")] = torch.ones_like(
                     edge_mask
                 ).to(bool)
-
                 all_parameters.append(edge_mask)
 
         return all_parameters
@@ -240,6 +239,10 @@ class HeteroGNNExplainer(GNNExplainer):
         copy_graph = copy.deepcopy(graph)
         graph.requires_grad = True
         model.step(graph.to(self.device))  # Set the y
+        y_true = {
+            key: graph.collect("y_semantic")[key].long().to(self.device)
+            for key in self.planes
+        }
 
         y = {
             key: graph.collect("x_semantic")[key].float().to(self.device)
@@ -264,23 +267,22 @@ class HeteroGNNExplainer(GNNExplainer):
             if node_index is not None:
                 assert y_hat.keys() == node_index.keys()
                 y_compare = torch.concat([y[key][node_index[key]] for key in y.keys()])
-                y_hat = torch.concat(
-                    [y_hat[key][node_index[key]] for key in y_hat.keys()]
+                y_hat = torch.concat([y_hat[key][node_index[key]] for key in y.keys()])
+                y_compare_true = torch.concat(
+                    [y_true[key][node_index[key]] for key in y.keys()]
                 )
             else:
-                y_compare = torch.concat([y[key] for key in y_hat.keys()])
-                y_hat = torch.concat([y_hat[key] for key in y_hat.keys()])
+                y_compare = torch.concat([y[key] for key in y.keys()])
+                y_hat = torch.concat([y_hat[key] for key in y.keys()])
+                y_compare_true = torch.concat([y_true[key] for key in y.keys()])
 
             loss = self._loss(y_hat, y_compare)
-
-            if loss_history is not None:
-                loss_history.append(loss.item())
-
-            else:
-                self.loss_history.append(loss.item())
-
+            self.loss_history.append(loss.item())
             loss.backward(retain_graph=True)
             optimizer.step()
+
+            recall_loss = RecallLoss(ignore_index=-1)(y_hat, y_compare_true)
+            self.recall_loss_history.append(recall_loss.item())
 
             # In the first iteration, we collect the nodes and edges that are
             # involved into making the prediction. These are all the nodes and
@@ -316,11 +318,8 @@ class HeteroGNNExplainer(GNNExplainer):
 
         return m_node, m_edge
 
-    def _classification_loss(self, y_hat, y):
-        return RecallLoss(ignore_index=-1)(y, y_hat)
-
     def _loss(self, y_hat, y):
-        loss = self._classification_loss(y_hat, y)
+        loss = RecallLoss(ignore_index=-1)(y_hat, y)
         m_node, m_edge = self.get_nexus_m()
 
         if self.edge_mask is not None:

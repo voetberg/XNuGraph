@@ -7,13 +7,15 @@ from torch_geometric.data.hetero_data import HeteroData
 
 class MaskStrats:
     @staticmethod
-    def topk_edges(edge_weights: torch.Tensor, nexus_edge_weights: torch.Tensor):
+    def topk_edges(
+        edge_weights: torch.Tensor, nexus_edge_weights: torch.Tensor, k: float = 0.333
+    ):
         tokp_edges = torch.topk(
-            edge_weights.ravel(), k=int(len(edge_weights.ravel()) / 3), dim=0
+            edge_weights.ravel(), k=int(len(edge_weights.ravel()) * k), dim=0
         ).indices
         tokp_edges_nexus = torch.topk(
             nexus_edge_weights.ravel(),
-            k=int(len(nexus_edge_weights.ravel()) / 3),
+            k=int(len(nexus_edge_weights.ravel()) * k),
             dim=0,
         ).indices
         return tokp_edges, tokp_edges_nexus
@@ -52,6 +54,53 @@ class MaskStrats:
         )
 
 
+def mask_nodes(
+    graph: HeteroData,
+    node_mask: dict,
+    planes: list[str] = ["u", "v", "y"],
+    marginalize: bool = True,
+):
+    new_nodes = {}
+    for plane in planes:
+        mask = node_mask[plane].sigmoid()
+        node_features = graph[plane]["x"][:, :4]
+
+        if marginalize:
+            z = torch.normal(
+                mean=torch.zeros_like(node_features, dtype=torch.float) - node_features,
+                std=torch.ones_like(node_features, dtype=torch.float) / 2,
+            )
+            new_nodes[plane] = node_features + z * (1 - mask)
+
+        else:
+            new_nodes[plane] = node_features * mask
+
+    new_graph = copy.deepcopy(graph)
+    for key, nodes in new_nodes.items():
+        new_graph[key]["x"] = nodes
+
+    return new_graph
+
+
+def mask_edges(
+    graph: HeteroData,
+    edge_mask: dict,
+    planes: list[str] = ["u", "v", "y"],
+    mask_strategy=MaskStrats.top_quartile,
+):
+    keep_edges = {}
+    for plane in planes:
+        edge_weights = edge_mask[(plane, "plane", plane)].sigmoid()
+        nexus_edge_weights = edge_mask[(plane, "nexus", "sp")].sigmoid()
+
+        edges, edges_nexus = mask_strategy(edge_weights, nexus_edge_weights)
+        keep_edges[(plane, "nexus", "sp")] = edges_nexus
+        keep_edges[(plane, "plane", plane)] = edges
+
+    subgraph = graph.edge_subgraph(keep_edges)
+    return subgraph
+
+
 def get_masked_graph(
     graph: HeteroData,
     edge_mask: Optional[dict] = None,
@@ -61,66 +110,9 @@ def get_masked_graph(
 ):
     node_mask = node_mask if node_mask != {} else None
     edge_mask = edge_mask if edge_mask != {} else None
-
-    keep_edges = {}
-    new_nodes = {}
-    for plane in planes:
-        if node_mask is not None:
-            new_nodes[plane] = graph[plane]["x"][:, :4] * node_mask[plane].sigmoid()
-
-        if edge_mask is not None:
-            edge_weights = edge_mask[(plane, "plane", plane)].sigmoid()
-            nexus_edge_weights = edge_mask[(plane, "nexus", "sp")].sigmoid()
-
-            edges, edges_nexus = mask_strategy(edge_weights, nexus_edge_weights)
-            keep_edges[(plane, "nexus", "sp")] = edges_nexus
-            keep_edges[(plane, "plane", plane)] = edges
-
+    if node_mask is not None:
+        graph = mask_nodes(graph, node_mask, planes)
     if edge_mask is not None:
-        subgraph = graph.edge_subgraph(keep_edges)
-    else:
-        subgraph = copy.deepcopy(graph)
+        graph = mask_edges(graph, edge_mask, planes, mask_strategy=mask_strategy)
 
-    for key, nodes in new_nodes.items():
-        subgraph[key]["x"] = nodes
-    return subgraph
-
-
-def apply_predefined_mask(graph, node_mask, edge_mask, nexus_edge_mask, planes):
-    masked_graph = copy.deepcopy(graph)
-    multi_col_keys = ["pos", "x", "x_semantic"]
-    single_col_keys = ["x_filter", "batch", "y_instance", "y_semantic", "id"]
-
-    for plane in planes:
-        nodes = {}
-        nodes.update(
-            {key: graph[plane][key][node_mask[plane], :] for key in multi_col_keys}
-        )
-        nodes.update(
-            {key: graph[plane][key][node_mask[plane]] for key in single_col_keys}
-        )
-
-        old_index = node_mask[plane].nonzero().squeeze().tolist()
-        if isinstance(old_index, int):
-            old_index = [old_index]
-        new_index = torch.arange(len(old_index)).tolist()
-        index_map = dict(zip(old_index, new_index))
-
-        edges = (
-            graph[(plane, "plane", plane)]["edge_index"][:, edge_mask[plane]]
-            .cpu()
-            .apply_(index_map.get)
-        )
-        edges_nexus = (
-            graph[(plane, "nexus", "sp")]["edge_index"][:, nexus_edge_mask[plane]]
-            .cpu()
-            .apply_(index_map.get)
-        )
-
-        masked_graph[(plane, "plane", plane)]["edge_index"] = edges
-        masked_graph[(plane, "nexus", "sp")]["edge_index"] = edges_nexus
-
-        for key in nodes.keys():
-            masked_graph[plane][key] = nodes[key]
-
-    return masked_graph
+    return graph
