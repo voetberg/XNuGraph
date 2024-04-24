@@ -30,7 +30,12 @@ class Load:
         self.message_passing_steps = message_passing_steps
         self.test = test
         self.planes = planes
-        self.data = self.load_data(data_path, batch_size=1)
+        if test:
+            self.data = self.load_data("./test_data.h5", batch_size=1)
+        else:
+            self.data = self.load_data(
+                data_path, batch_size=batch_size, n_batches=n_batches
+            )
         try:
             self.model = self.load_checkpoint(checkpoint_path)
 
@@ -88,7 +93,7 @@ class Load:
             )
 
         if n_batches is not None:
-            data = DataLoader(data.dataset[n_batches:], batch_size=batch_size)
+            data = DataLoader(data.dataset[:n_batches], batch_size=batch_size)
 
         try:
             print("INFO: Batching Data")
@@ -142,7 +147,7 @@ class Load:
 
     def make_predictions(self):
         accelerator, device = util.configure_device()
-        trainer = pl.Trainer(accelerator=accelerator, logger=False, devices=[device])
+        trainer = pl.Trainer(accelerator=accelerator, logger=False, devices=device)
         predictions = trainer.predict(self.model, dataloaders=self.data)
         return predictions
 

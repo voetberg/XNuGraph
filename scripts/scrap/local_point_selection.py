@@ -6,6 +6,7 @@ from torch_geometric.data import Batch
 import h5py
 import torch
 import numpy as np
+import os
 
 planes = ["u", "v", "y"]
 
@@ -14,8 +15,8 @@ def hip_criteron(graph_prediction, graph_true):
     num_possible = {plane: len((graph_true[plane] == 1).nonzero()) for plane in planes}
     if sum([num_possible[plane] for plane in planes]) == 0:
         return {
-            "num_correct": np.NaN,
-            "num_incorrect": np.NaN,
+            "num_correct": 0,
+            "num_incorrect": 0,
             "correct_hits": {plane: [] for plane in planes},
             "incorrect_hits": {plane: [] for plane in planes},
         }
@@ -52,8 +53,8 @@ def michel_criteon(graph_prediction, graph_true):
     num_possible = {plane: len((graph_true[plane] == 4).nonzero()) for plane in planes}
     if sum([num_possible[plane] for plane in planes]) == 0:
         return {
-            "num_correct": np.NaN,
-            "num_incorrect": np.NaN,
+            "num_correct": 0,
+            "num_incorrect": 0,
             "correct_hits": {plane: [] for plane in planes},
             "incorrect_hits": {plane: [] for plane in planes},
         }
@@ -92,17 +93,6 @@ def michel_criteon(graph_prediction, graph_true):
     }
 
 
-def save(selected_data, node_indices, outfile):
-    subset = Batch.from_data_list([item for item in selected_data])
-
-    h5_file = h5py.File(name=f"{outfile}/results.h5", mode="w")
-    interface = H5Interface(h5_file)
-    interface.save("test", subset)
-
-    with open(f"{outfile}/results.json", "w") as f:
-        json.dump(node_indices, f)
-
-
 def evaluate_graph(graph, criteons: list):
     true = graph.collect("y_semantic")
     predictions = {
@@ -115,31 +105,45 @@ def evaluate_graph(graph, criteons: list):
 
     return results
 
+def save(data, metrics, node_indices, outfile, name_prefix=""):
+
+    keep_dict = {int(key): metrics[key] for key in node_indices}
+
+    selected_data = [data[index] for index in node_indices]
+    [
+        EdgeVisuals().event_plot(d, outdir=out_path, file_name=f"event_{n}.png")
+        for d, n in zip(selected_data, node_indices)
+    ]
+
+    subset = Batch.from_data_list([item for item in selected_data])
+    h5_file = h5py.File(name=f"{outfile}/{name_prefix}results.h5", mode="w")
+    interface = H5Interface(h5_file)
+    interface.save("test", subset)
+
+    with open(f"{outfile}/{name_prefix}results.json", "w") as f:
+        json.dump(keep_dict, f)
+
 
 if __name__ == "__main__":
-    checkpoint = "./paper.ckpt"
-    data_path = "./test_data/analysis_subset.h5"
-    out_path = "./test_data/local_hits"
+
+    checkpoint = '/wclustre/fwk/exatrkx/data/uboone/CHEP2023/paper.ckpt'
+    data_path = '/wclustre/fwk/exatrkx/data/uboone/CHEP2023/CHEP2023.gnn.h5'
+    #data_path = "./test_data.h5"
+    #out_path = "./test_data/local_hits"
+    out_path = '/wclustre/fwk/exatrkx/data/uboone/CHEP2023/XNuGraph/analysis_subset_local_hits'
+
+    os.makedirs(out_path, exist_ok=True)
 
     load = Load(checkpoint_path=checkpoint, data_path=data_path)
+    data = load.make_predictions()
 
     results = []
-    for index, graph in enumerate(load.data):
+    for index, graph in enumerate(data):
         results.append(evaluate_graph(graph, criteons=[hip_criteron, michel_criteon]))
 
-    keep_indices = [
-        np.nanargmax([result["hip_criteron"]["num_incorrect"] for result in results]),
-        np.nanargmax([result["michel_criteon"]["num_incorrect"] for result in results]),
-        np.nanargmin([result["hip_criteron"]["num_correct"] for result in results]),
-        np.nanargmin([result["michel_criteon"]["num_correct"] for result in results]),
-    ]
-    print(keep_indices)
+    n_events = 8
+    michel_events = np.argpartition([result["michel_criteon"]["num_incorrect"] for result in results], -1*n_events)[-1*n_events:].tolist()
+    hip_events = np.argpartition([result["hip_criteron"]["num_incorrect"] for result in results], -1*n_events)[-1*n_events:].tolist()
 
-    keep_dict = {int(key): results[key] for key in keep_indices}
-    selected_data = [load.data[index] for index in keep_indices]
-    [
-        EdgeVisuals().event_plot(d, outdir=out_path, file_name=f"/event_{n}.png")
-        for d, n in zip(selected_data, keep_indices)
-    ]
-
-    save(selected_data, keep_dict, out_path)
+    save(data, results, michel_events, outfile=out_path, name_prefix="michel_")
+    save(data, results, hip_events, outfile=out_path, name_prefix="hip_")
