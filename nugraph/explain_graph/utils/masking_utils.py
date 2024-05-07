@@ -59,11 +59,16 @@ def mask_nodes(
     node_mask: dict,
     planes: list[str] = ["u", "v", "y"],
     marginalize: bool = True,
+    make_nan: bool = True,
 ):
     new_nodes = {}
     for plane in planes:
         mask = node_mask[plane].sigmoid()
         node_features = graph[plane]["x"][:, :4]
+
+        if make_nan:
+            mask[mask < 0.5] = torch.nan
+            print(mask)
 
         if marginalize:
             z = torch.normal(
@@ -107,11 +112,12 @@ def get_masked_graph(
     node_mask: Optional[dict] = None,
     mask_strategy: MaskStrats = MaskStrats.top_quartile,
     planes: list[str] = ["u", "v", "y"],
+    make_nodes_nan: bool = True,
 ):
     node_mask = node_mask if node_mask != {} else None
     edge_mask = edge_mask if edge_mask != {} else None
     if node_mask is not None:
-        graph = mask_nodes(graph, node_mask, planes)
+        graph = mask_nodes(graph, node_mask, planes, make_nan=make_nodes_nan)
     if edge_mask is not None:
         graph = mask_edges(graph, edge_mask, planes, mask_strategy=mask_strategy)
 

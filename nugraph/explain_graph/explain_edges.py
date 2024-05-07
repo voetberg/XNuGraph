@@ -93,6 +93,9 @@ class GlobalGNNExplain(ExplainLocal):
         except Exception:
             data = [data]
 
+        if self.load.test:
+            data = [data[0]]
+
         for graph in data:
             explaination = self.explainer(graph=graph)
             metrics = self.calculate_metrics(explaination)

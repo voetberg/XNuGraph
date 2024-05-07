@@ -3,7 +3,7 @@ import pytorch_lightning as pl
 import h5py
 import os
 
-from nugraph.models import NuGraph2
+from nugraph.models import NuGraph2, PrunedNuGraph
 from nugraph.data import H5DataModule, H5Dataset
 from nugraph import util
 
@@ -23,30 +23,37 @@ class Load:
         test=False,
         planes=["u", "v", "y"],
         n_batches=None,
+        prune=False,
+        prune_index=None,
+        load_data=True,
+        add_features=False,
     ) -> None:
         assert os.path.exists(data_path)
         assert os.path.exists(checkpoint_path)
 
         self.message_passing_steps = message_passing_steps
+        self.data_path = data_path
         self.test = test
         self.planes = planes
-        if test:
-            self.data = self.load_data("./test_data.h5", batch_size=1)
-        else:
+        self.add_features = add_features
+        if self.test:
+            n_batches = 1
+
+        if load_data:
             self.data = self.load_data(
                 data_path, batch_size=batch_size, n_batches=n_batches
             )
+
+        graph_model = NuGraph2 if not prune else PrunedNuGraph
         try:
-            self.model = self.load_checkpoint(checkpoint_path)
+            self.model = self.load_checkpoint(checkpoint_path, graph_model, prune_index)
 
         except Exception as e:
             print(e)
-
             print("Could not load checkpoint, using an untrained network")
             self.model = NuGraph2()
-        # self.predictions = self.make_predictions()
 
-    def load_checkpoint(self, checkpoint_path, graph=NuGraph2):
+    def load_checkpoint(self, checkpoint_path, graph=NuGraph2, prune_index=None):
         # Assumed pre-trained model that can perform inference on the loaded data
 
         try:
@@ -59,6 +66,7 @@ class Load:
                 planar_features=64,
                 nexus_features=16,
                 vertex_features=40,
+                prune_feature_index=prune_index,
             )
 
         except RuntimeError:
@@ -72,6 +80,7 @@ class Load:
                 semantic_head=True,
                 filter_head=True,
                 map_location=torch.device("cpu"),
+                prune_feature_index=prune_index,
             )
         model.eval()
         return model
@@ -85,7 +94,9 @@ class Load:
 
     def load_data(self, data_path, batch_size=16, n_batches=None):
         try:
-            data = H5DataModule(data_path, batch_size=batch_size).val_dataloader()
+            data = H5DataModule(
+                data_path, batch_size=batch_size, add_features=self.add_features
+            ).val_dataloader()
         except Exception as e:
             print(f"WARNING: {e}, loading 'test' samples.")
             data = DataLoader(
@@ -101,7 +112,7 @@ class Load:
             batches = [self.single_graphs(data.dataset[0], index) for index in events]
             return batches
 
-        except IndexError:
+        except (IndexError, KeyError):
             print("INFO: returning dataset as dataset object.")
             return data.dataset
 

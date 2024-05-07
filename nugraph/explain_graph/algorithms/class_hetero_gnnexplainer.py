@@ -19,11 +19,11 @@ class MultiEdgeHeteroGNNExplainer(HeteroGNNExplainer):
         self.incorrect_only = incorrect_only
         self.semantic_classes = ["MIP", "HIP", "shower", "michel", "diffuse"]
 
-    def forward(self, model, graph):
+    def forward(self, model, graph, nodes):
         self.target_class = 0
 
         # Focus on the prediction for each graph
-        # - the pruned subgraph should be the subgraph that allow a certian class to be predicted
+        # - the pruned subgraph should be the subgraph that allow a certain class to be predicted
         multiple_loss = []
         explainations = {}
         for class_index in range(len(self.semantic_classes)):

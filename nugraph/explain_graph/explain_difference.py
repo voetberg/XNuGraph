@@ -120,7 +120,10 @@ class GNNExplainerDifference(GlobalGNNExplain):
         )
 
     def visualize(self, explanation, *args, **kwargs):
-        visualization_classes = ["correct", "faithful"]
+        visualization_classes = [
+            "faithful",
+            "correct",
+        ]
         self.plot_loss(file_name=f"{self.out_path}/explainer_loss.png")
         node_plotter = NodeVisuals(
             self.out_path,

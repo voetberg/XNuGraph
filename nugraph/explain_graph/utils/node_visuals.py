@@ -56,6 +56,7 @@ class NodeVisuals:
 
         plt.tight_layout()
         plt.savefig(f"{self.out_path.rstrip('/')}/{file_name}")
+        plt.close()
 
     def _single_plot(self, style, subplot, importances, position, y_label=""):
         {
@@ -66,8 +67,11 @@ class NodeVisuals:
         }[style](subplot, importances, position, y_label)
 
     def _hist(self, subplot, importances, position, y_label):
-        if importances.shape[0] > importances.shape[1]:
-            importances = importances.T
+        try:
+            if importances.shape[0] > importances.shape[1]:
+                importances = importances.T
+        except IndexError:
+            pass
         subplot.hist(importances, alpha=0.65)
         subplot.set_ylabel(y_label)
 

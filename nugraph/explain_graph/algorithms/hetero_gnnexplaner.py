@@ -57,9 +57,14 @@ class HeteroExplainer(Explainer):
         return target
 
     def get_masked_prediction(
-        self, graph, edge_mask, node_mask=None, class_out=True
+        self, graph, edge_mask, node_mask=None, class_out=True, make_nodes_nan=False
     ) -> Tensor:
-        masked_graph = get_masked_graph(graph, edge_mask=edge_mask, node_mask=node_mask)
+        masked_graph = get_masked_graph(
+            graph,
+            edge_mask=edge_mask,
+            node_mask=node_mask,
+            make_nodes_nan=make_nodes_nan,
+        )
         out = self.get_prediction(graph=masked_graph, class_out=class_out)
         return out
 
@@ -83,6 +88,7 @@ class HeteroGNNExplainer(GNNExplainer):
         lr: float = 0.01,
         planes=["u", "v", "y"],
         nexus=True,
+        nan_mask=False,
         **kwargs,
     ):
         super().__init__(epochs, lr, **kwargs)
@@ -91,6 +97,7 @@ class HeteroGNNExplainer(GNNExplainer):
         self.recall_loss_history = []
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.nexus = nexus
+        self.nan_mask = nan_mask
 
     def forward(self, model, graph, nodes=None):
         prediction = copy.deepcopy(graph).to(self.device)
@@ -255,9 +262,11 @@ class HeteroGNNExplainer(GNNExplainer):
         for i in tqdm.tqdm(range(self.epochs)):
             optimizer.zero_grad()
             stepped_graph = get_masked_graph(
-                copy_graph, edge_mask=self.edge_mask, node_mask=self.node_mask
+                copy_graph,
+                edge_mask=self.edge_mask,
+                node_mask=self.node_mask,
+                make_nodes_nan=self.nan_mask,
             ).to(self.device)
-
             model.step(stepped_graph)  # Set the y_hat
             y_hat = {
                 key: stepped_graph.collect("x_semantic")[key].float().to(self.device)

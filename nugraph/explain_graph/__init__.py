@@ -7,7 +7,6 @@ from nugraph.explain_graph.explain_edges import (
 )
 from nugraph.explain_graph.explain_features import (
     GNNExplainerHits,
-    GNNExplainFeatures,
 )
 
 from nugraph.explain_graph.explain_difference import GNNExplainerDifference

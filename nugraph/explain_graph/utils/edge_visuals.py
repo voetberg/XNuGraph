@@ -96,10 +96,6 @@ class EdgeVisuals:
 
                 plot.plot([0, 1], hits_y, lw=hit * 2, c=colors[plane_index], alpha=0.05)
 
-            # bins = math.ceil(math.sqrt(len(nexus_edges)))
-            # bins = bins if bins != 0 else 10
-            # plot.hist(nexus_edges, alpha=0.6, label=plane, bins=bins)
-
         plot.set_title("Nexus Weight Importance")
 
         plot.set_yticks([0, 1])
@@ -212,14 +208,14 @@ class EdgeVisuals:
             "palevioletred",
             "indigo",
         ]
-        labels_classes = [-1] + self.semantic_classes
+        labels_classes = ["Background"] + self.semantic_classes
         color_map = {index: color for index, color in zip(labels_classes, colors)}
-
+        label_indices = [-1] + [i for i in range(len(labels_classes))]
+        index_map = {index: color for index, color in zip(label_indices, colors)}
         handles = [
             mpatches.Patch(color=color, label=label)
             for label, color in color_map.items()
         ]
-
         for plane, subplot in zip(self.planes, subplots.T):
             self.draw_ghost_plot(graph, plane, subplot[0])
             self.draw_ghost_plot(graph, plane, subplot[1])
@@ -227,6 +223,7 @@ class EdgeVisuals:
 
             x, y = graph.collect("pos")[plane][:, 0], graph.collect("pos")[plane][:, 1]
             true_labels = graph.collect("y_semantic")[plane]
+
             predict_label = torch.argmax(graph.collect("x_semantic")[plane], axis=1)
 
             largest = np.max(np.array(graph.collect("x_semantic")[plane]), axis=1)
@@ -237,10 +234,10 @@ class EdgeVisuals:
 
             confidence = largest - second
             subplot[0].scatter(
-                x, y, c=[color_map[label.item()] for label in true_labels]
+                x, y, c=[index_map[label.item()] for label in true_labels]
             )
             subplot[1].scatter(
-                x, y, c=[color_map[label.item()] for label in predict_label]
+                x, y, c=[index_map[label.item()] for label in predict_label]
             )
             subplot[2].scatter(x, y, c=confidence, s=confidence * 10)
 
@@ -256,6 +253,7 @@ class EdgeVisuals:
         figure.suptitle(title)
 
         plt.savefig(f"{outdir.rstrip('/')}/{file_name}")
+        plt.close()
 
 
 class EdgeLengthDistribution:
@@ -339,6 +337,7 @@ class EdgeLengthDistribution:
             figure.supxlabel("Importance")
 
         plt.savefig(f"{self.out_path.rstrip('/')}/{file_name}")
+        plt.close()
 
     def _plot_classwise(self, graph, style, subplots, non_trained=False):
         if non_trained:
