@@ -30,7 +30,9 @@ class FeatureLoss:
         x_binary = x * x_binary_mask
         label_binary = label["y_semantic"] * label_binary_mask
 
-        loss = torch.nn.CrossEntropyLoss()(x_binary[:, :, 0], label_binary)
+        if len(x_binary.shape) == 3:
+            x_binary = x_binary[:, :, 0]
+        loss = torch.nn.CrossEntropyLoss()(x_binary, label_binary)
         return loss
 
     def _hipmip(self, x, label):
@@ -43,9 +45,15 @@ class FeatureLoss:
             torch.isin(label["y_semantic"], torch.tensor([0, 1], device=self.device)),
             other=torch.tensor([torch.nan], device=self.device),
         )  # Pick if in either track class
-        y_hat = x[:, :, 0] * torch.stack([track_filter for _ in range(x.size(1))]).mT
+        if len(x.shape) == 3:
+            x = x[:, :, 0]
+        else:
+            x = x.expand(-1, 5)  # Cheating :0
+        y_hat = x * torch.stack([track_filter for _ in range(x.size(1))]).mT
         y = label["y_semantic"] * track_filter
         y = y.type(torch.LongTensor).to(torch.device(self.device))
-
-        loss = torch.nn.CrossEntropyLoss()(y_hat, y)
+        try:
+            loss = torch.nn.CrossEntropyLoss()(y_hat, y)
+        except IndexError:
+            print(y_hat, y)
         return loss

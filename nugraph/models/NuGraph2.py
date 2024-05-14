@@ -46,6 +46,7 @@ class NuGraph2(LightningModule):
 
         self.save_hyperparameters()
         self.in_features = in_features
+        self.planar_features = planar_features
         self.planes = planes
         self.semantic_classes = semantic_classes
         self.event_classes = event_classes

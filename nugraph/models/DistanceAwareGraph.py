@@ -70,7 +70,6 @@ class DistanceAwareGraph(NuGraph2):
             for i, p in enumerate(self.planes):
                 s = x[p].detach().unsqueeze(1).expand(-1, m[p].size(1), -1)
                 m[p] = concatenate((m[p], s), dim=-1)
-            print(edge_attr_plane["u"].shape)
             self.plane_net(m, edge_index_plane, edge_attr_plane)
             self.nexus_net(m, edge_index_nexus, nexus)
         ret = {}

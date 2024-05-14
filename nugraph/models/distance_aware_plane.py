@@ -94,5 +94,4 @@ class DistanceAwarePlaneNet(nn.Module):
         edge_attr: dict[str, Tensor],
     ) -> None:
         for p in self.net:
-            print(edge_attr[p].shape)
             x[p] = self.ckpt(self.net[p], x[p], edge_index[p], edge_attr[p])

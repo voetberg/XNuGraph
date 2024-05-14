@@ -101,8 +101,7 @@ class FeatureGeneration(BaseTransform):
         for plane in self.planes:
             _features = [feature[plane] for feature in edge_features]
             features = torch.concat(_features, dim=-1).T
-            print(features.shape)
-            add_graph[plane, plane].features = torch.concat(_features, dim=-1).T
+            add_graph[plane, plane].features = torch.concat(features, dim=-1).T
 
             _features = [feature[plane] for feature in node_features]
             _features.append(graph.collect("x")[plane][:, : self.n_original_features])

@@ -68,7 +68,6 @@ def mask_nodes(
 
         if make_nan:
             mask[mask < 0.5] = torch.nan
-            print(mask)
 
         if marginalize:
             z = torch.normal(

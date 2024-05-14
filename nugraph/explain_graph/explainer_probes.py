@@ -1,6 +1,5 @@
 from typing import Optional
 from nugraph.explain_graph.algorithms.linear_probes.probed_network import (
-    ProbedNetwork,
     DynamicProbedNetwork,
 )
 
@@ -25,7 +24,7 @@ class ExplainNetwork(ExplainLocal):
         )
         self.planes = planes
         self.message_passing_steps = message_passing_steps
-        self.explainer = ProbedNetwork(model=self.model, planes=self.planes)
+        self.explainer = DynamicProbedNetwork(model=self.model, planes=self.planes)
 
         self.entropy = {}
         self.loss = {}
