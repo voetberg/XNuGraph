@@ -123,7 +123,7 @@ class DynamicProbedNetwork:
                 title = f"Layer weights - {name.upper()}"
                 LatentRepresentation(
                     weight, out_path=layer_rep_outpath, name=plot_name, title=title
-                )()
+                ).visualize()
 
         if self.make_embedding_rep:
             embeddings = self.extract_feature_embedding()
@@ -141,15 +141,15 @@ class DynamicProbedNetwork:
                     out_path=layer_rep_outpath,
                     name=plot_name,
                     title=title,
-                )()
+                ).visualize()
 
-        # for loss_function, decoder_step in self.probes.items():
-        #     self.training_history[loss_function] = {}
-        #     for decoder_name, probe in decoder_step.items():
-        #         trainer = TrainSingleProbe(probe=probe, epochs=self.epochs)
-        #         loss = trainer.train_probe(self.data)
-        #         self.training_history[loss_function][decoder_name] = loss
-        #         self.save_progress()
+        for loss_function, decoder_step in self.probes.items():
+            self.training_history[loss_function] = {}
+            for decoder_name, probe in decoder_step.items():
+                trainer = TrainSingleProbe(probe=probe, epochs=self.epochs)
+                loss = trainer.train_probe(self.data)
+                self.training_history[loss_function][decoder_name] = loss
+                self.save_progress()
 
     def extract_network_weights(self):
         weights = {}
@@ -221,7 +221,6 @@ class DynamicProbedNetwork:
                 lambda x: self.message_in_function(x, self.message_passing_steps)
             ).items()
         }
-        # embedding['decoder'] = {p: embed for p, embed in extract_embedding(self.decoder_in_func).items()}
         return embedding
 
     def save_progress(self):

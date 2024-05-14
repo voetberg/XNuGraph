@@ -186,9 +186,5 @@ class LatentRepresentation:
         plt.savefig(f"{self.out_path}/{self.plot_name}.png")
         plt.close()
 
-    def save(self):
-        ""
-
     def __call__(self):
         self.visualize()
-        self.save()
