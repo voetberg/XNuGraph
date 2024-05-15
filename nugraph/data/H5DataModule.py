@@ -3,6 +3,7 @@ import warnings
 
 import sys
 import h5py
+import numpy as np
 import tqdm
 
 from torch import tensor, cuda
@@ -103,6 +104,9 @@ class H5DataModule(LightningDataModule):
         self.train_dataset = H5Dataset(self.filename, train_samples, transform)
         self.val_dataset = H5Dataset(self.filename, val_samples, transform)
         self.test_dataset = H5Dataset(self.filename, test_samples, transform)
+
+        subset_index = [i for i in test_samples if np.random.default_rng().random() < 0.3]
+        self.test_subset = H5Dataset(self.filename, subset_index, transform)
 
     @staticmethod
     def generate_samples(data_path: str):

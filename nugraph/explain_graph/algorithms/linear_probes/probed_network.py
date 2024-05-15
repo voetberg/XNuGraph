@@ -2,6 +2,8 @@ import torch
 import numpy as np
 import os
 import matplotlib.pyplot as plt
+from torch_geometric.data import HeteroData, Batch
+from torch_geometric.utils import unbatch
 
 import json
 from tqdm import tqdm
@@ -30,20 +32,31 @@ class DynamicProbedNetwork:
         out_path="./",
         make_latent_rep=False,
         make_embedding_rep=True,
+        feature_loss=["tracks", "hipmip"], 
+        network_target=['encoder', 'message', 'decoder']
     ) -> None:
+        
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = model
+        self.model.train(False)
         self.data = data
+
         self.planes = planes
         self.semantic_classes = semantic_classes
         self.loss_metric = loss_metric
         self.out_path = out_path
+
         self.message_passing_steps = message_passing_steps
         self.epochs = epochs
+
         self.make_latent_rep = make_latent_rep
         self.make_embedding_rep = make_embedding_rep
 
+        self.feature_loss = feature_loss
+        self.network_traget = network_target
+
         self.training_history = {}
-        self.make_probes()
+        self.probe = self.make_probe()
 
         if not os.path.exists(os.path.dirname(self.out_path)):
             os.makedirs(self.out_path)
@@ -60,8 +73,9 @@ class DynamicProbedNetwork:
             plane: feat[plane][:, : self.model.in_features] for plane in self.planes
         }
 
-        for _ in range(step + 1):
-            for _, p in enumerate(self.planes):
+        for _ in range(step):
+            # shortcut connect features
+            for p in self.planes:
                 s = feat[p].detach().unsqueeze(1).expand(-1, m[p].size(1), -1)
                 m[p] = torch.cat((m[p], s), dim=-1)
             self.model.plane_net(m, edge_index_plane)
@@ -75,43 +89,28 @@ class DynamicProbedNetwork:
         decoder_out = self.model.semantic_decoder(m, batch)["x_semantic"]
         return decoder_out
 
-    def make_probes(self):
-        probes = {}
+    def make_probe(self):
+        input_function = {
+            'encoder': self.encoder_in_func, 
+             'message': lambda x: self.message_in_function(x, self.message_passing_steps), 
+             'decoder': self.decoder_in_func
+        }
+        input_size = {
+            'encoder': (self.model.planar_features, 1), 
+             'message': (self.model.planar_features, 1), 
+             'decoder': (len(self.semantic_classes), 1)
+        }
+        loss_function = FeatureLoss(feature=self.feature_loss).loss
 
-        for loss_name in ["tracks", "hipmip"]:
-            loss_function = FeatureLoss(feature=loss_name).loss
-            probes[loss_name] = {}
-
-            encoder_probe = DynamicLinearDecoder(
-                in_shape=(self.model.planar_features, 1),
-                input_function=self.encoder_in_func,
-                loss_function=loss_function,
+        probe = DynamicLinearDecoder(
+            in_shape=input_size[self.network_traget],
+            input_function=input_function[self.network_traget],
+            loss_function=loss_function,
+            device=self.device
             )
-            probes[loss_name]["encoder"] = encoder_probe
+        return probe
 
-            for step in range(self.message_passing_steps):
-
-                def internal_message_step(x):
-                    return self.message_in_function(x, step)
-
-                message_probe = DynamicLinearDecoder(
-                    in_shape=(self.model.planar_features, 1),
-                    input_function=internal_message_step,
-                    loss_function=loss_function,
-                )
-                probes[loss_name][f"message_{step+1}"] = message_probe
-
-            decoder_probe = DynamicLinearDecoder(
-                in_shape=(len(self.semantic_classes), 1),
-                input_function=self.decoder_in_func,
-                loss_function=loss_function,
-            )
-            probes[loss_name]["decoder"] = decoder_probe
-
-        self.probes = probes
-
-    def train(self):
-        # Do these first, as they can be done with the original checkpoint and nothing else
+    def network_clustering(self): 
         layer_rep_outpath = f"{self.out_path.rstrip('/')}/clustering"
         if not os.path.exists(layer_rep_outpath):
             os.makedirs(layer_rep_outpath)
@@ -131,7 +130,6 @@ class DynamicProbedNetwork:
                 p: torch.concatenate([batch[p]["y_semantic"] for batch in self.data])
                 for p in self.planes
             }
-
             for name, embedding in embeddings.items():
                 plot_name = f"feature_embedding_{name}"
                 title = f"Feature Embedding - {name.upper()}"
@@ -143,13 +141,12 @@ class DynamicProbedNetwork:
                     title=title,
                 ).visualize()
 
-        for loss_function, decoder_step in self.probes.items():
-            self.training_history[loss_function] = {}
-            for decoder_name, probe in decoder_step.items():
-                trainer = TrainSingleProbe(probe=probe, epochs=self.epochs)
-                loss = trainer.train_probe(self.data)
-                self.training_history[loss_function][decoder_name] = loss
-                self.save_progress()
+    def train(self):
+        self.network_clustering()
+        trainer = TrainSingleProbe(probe=self.probe, epochs=self.epochs)
+        loss = trainer.train_probe(self.data)
+        self.training_history = loss
+        self.save_progress()
 
     def extract_network_weights(self):
         weights = {}
@@ -190,10 +187,13 @@ class DynamicProbedNetwork:
 
         def extract_embedding(layer_func):
             total_embedding = []
-            for batch in self.data:
-                embedding = layer_func(batch)
 
-                total_embedding.append(embedding)
+            n_batches_use = 20
+            for n_batch, batch in enumerate(self.data):
+                if n_batch < n_batches_use: 
+                    embedding = layer_func(batch)
+
+                    total_embedding.append(embedding)
 
             total_embedding = {
                 p: torch.concat(
@@ -209,7 +209,6 @@ class DynamicProbedNetwork:
                 )
                 for p in self.planes
             }
-            print(total_embedding["u"].shape)
             return total_embedding
 
         embedding["encoder"] = {
@@ -224,32 +223,8 @@ class DynamicProbedNetwork:
         return embedding
 
     def save_progress(self):
-        with open(f"{self.out_path}/probe_history.json", "w") as f:
+        with open(f"{self.out_path}/{self.feature_loss}_{self.network_traget}_probe_history.json", "w") as f:
             json.dump(self.training_history, f)
-
-    def plot_probe_training_history(self, file_name=""):
-        plt.close("all")
-
-        metrics = self.training_history.keys()
-        fig, subplots = plt.subplots(
-            ncols=len(metrics),
-            nrows=1,
-            figsize=((2 * len(metrics)) + 10, 10),
-        )
-
-        for subplot, metric in zip(subplots, metrics):
-            probe_history = self.training_history[metric]
-            for probe_name, history in probe_history.items():
-                subplot.plot(history, marker="o", label=probe_name)
-
-            subplot.set_title(metric)
-
-        fig.supxlabel("Training Epoch")
-        fig.supylabel("Loss")
-        fig.tight_layout()
-        plt.legend()
-        plt.savefig(f"{self.out_path.rstrip('/')}/{file_name}_probe_loss.png")
-
 
 class TrainSingleProbe:
     def __init__(
@@ -263,20 +238,21 @@ class TrainSingleProbe:
         self.epochs = epochs
         self.optimizer = torch.optim.SGD(params=self.probe.parameters(), lr=0.001)
 
-    def step(self, x, labels):
+    def train_step(self, batch):
         self.probe.train(True)
-        prediction = self.probe.forward(x)
-        loss = self.probe.loss(prediction, labels)
-        for plane in loss:
-            plane.backward(retain_graph=True)
-        self.optimizer.step()
+        prediction = self.probe.forward(batch)
+        loss = self.probe.loss(prediction, batch)
         return loss
 
     def train_probe(self, data):
-        loss = []
-        for _ in tqdm(range(self.epochs)):
-            epoch_loss = []
-            for batch in data:
-                epoch_loss.append(self.step(batch, batch))
-            loss.append(torch.mean(torch.tensor(epoch_loss)).item())
-        return loss
+        training_history = []
+        for _ in range(self.epochs):
+            epoch_loss = 0
+            for batch in tqdm(data):
+                loss = self.train_step(batch)
+                epoch_loss += loss
+            epoch_loss.backward()
+            self.optimizer.step()
+            training_history.append(epoch_loss.item())
+
+        return training_history

@@ -9,8 +9,10 @@ class FeatureLoss:
         self.func = {"tracks": self._tracks, "hipmip": self._hipmip}[feature]
 
     def loss(self, y_hat, y):
-        loss = [self.func(y_hat[plane], y[plane]) for plane in self.planes]
-        return loss
+        loss = 0
+        for p in self.planes: 
+            loss += self.func(y_hat[p], y[p])
+        return loss/len(self.planes)
 
     def _tracks(self, x, label):
         """

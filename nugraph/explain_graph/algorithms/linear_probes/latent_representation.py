@@ -54,10 +54,10 @@ class LatentRepresentation:
                 f"Algorithm {self.decomposition_algorithm} not included."
             )
 
-        all_weights = np.concatenate([self.weights[p] for p in self.planes])
+        all_weights = np.concatenate([self.weights[p].cpu() for p in self.planes])
         decomposition_engine = decomp(all_weights)
         self.decomposition = {
-            plane: decomposition_engine.transform(self.weights[plane])
+            plane: decomposition_engine.transform(self.weights[plane].cpu())
             for plane in self.planes
         }
 

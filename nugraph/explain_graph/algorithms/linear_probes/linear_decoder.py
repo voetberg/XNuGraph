@@ -9,6 +9,7 @@ class DynamicLinearDecoder(torch.nn.Module):
         loss_function,
         planes=("u", "v", "y"),
         num_classes=5,
+        device="cpu"
     ) -> None:
         super().__init__()
 
@@ -17,7 +18,7 @@ class DynamicLinearDecoder(torch.nn.Module):
 
         self.input_function = input_function
         self.loss_function = loss_function
-
+        self.device = device
         self.decoder = torch.nn.ModuleDict()
         for plane in planes:
             self.decoder[plane] = self.class_decoder(in_shape)
@@ -25,7 +26,7 @@ class DynamicLinearDecoder(torch.nn.Module):
         self.softmax = torch.nn.functional.softmax
 
     def class_decoder(self, in_shape):
-        return torch.nn.Linear(*in_shape, self.num_classes)
+        return torch.nn.Linear(*in_shape, self.num_classes).to(device=self.device)
 
     def forward(self, x):
         step_output = self.input_function(x)
