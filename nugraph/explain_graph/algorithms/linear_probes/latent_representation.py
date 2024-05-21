@@ -1,5 +1,6 @@
+from typing import Sequence
 from sklearn.manifold import TSNE, Isomap
-from sklearn.decomposition import PCA
+from sklearn.decomposition import PCA, IncrementalPCA
 from sklearn.cluster import DBSCAN, KMeans
 
 from sklearn.metrics import silhouette_samples
@@ -9,28 +10,92 @@ import matplotlib.patches as mpatches
 import numpy as np
 
 
+class BatchedFit:
+    def __init__(
+        self,
+        dataloader,
+        transform,
+        planes,
+        embedding_function,
+        max_features=50,
+        batch_size=200,
+    ) -> None:
+        self.batch_size = batch_size
+        self.planes = planes
+        self.pca = {}
+        self.max_features = max_features
+        self.batch_size = batch_size
+        self.loader = dataloader
+        self.transform_function = transform
+        self.embedding_function = embedding_function
+
+    def fit(self):
+        # Following the recommendation of
+        # the original author and refusing it down via PCA first
+        # PCA Can handle batching
+
+        for plane in self.planes:
+            pca = IncrementalPCA(
+                n_components=self.max_features, batch_size=self.batch_size
+            )
+
+            for batch in self.loader:
+                # get the embedding of the batch
+                embedding = self.embedding_function(batch)[plane].detach()
+                if embedding.shape[0] != 0:
+                    ravelled = embedding.reshape(
+                        (embedding.shape[0], embedding.shape[1] * embedding.shape[2])
+                    )
+                    pca = pca.partial_fit(ravelled)
+
+            self.pca[plane] = pca
+
+    def transform(self):
+        decomposition = {}
+        for plane in self.planes:
+            pca_decomp = []
+            for batch in self.loader:
+                embedding = self.embedding_function(batch)[plane].detach()
+                if embedding.shape[0] != 0:
+                    ravelled = embedding.reshape(
+                        (embedding.shape[0], embedding.shape[1] * embedding.shape[2])
+                    )
+                    pca_decomp.append(self.pca[plane].transform(ravelled))
+
+            transformed = np.concatenate(pca_decomp)
+            decomposition[plane] = self.transform_function.fit_transform(transformed)
+        return decomposition
+
+
 class LatentRepresentation:
     def __init__(
         self,
-        weights,
+        embedding_function,
+        data_loader,
         out_path,
+        batched_fit: bool = True,
         name="plot",
         title="",
-        n_dim=2,
+        n_visual_dim=2,
         n_clusters=5,
+        clustering_components: int = 12,
         true_labels=None,
         decomposition_algorithm="isomap",
         clustering_algorithm="kmeans",
+        planes: Sequence = ("u", "v", "y"),
     ) -> None:
-        self.weights = weights
-        self.planes = weights.keys()
         self.true_labels = true_labels
+        self.embedding_function = embedding_function
+        self.data_loader = data_loader
+        self.planes = planes
 
-        self.n_components = n_dim
+        self.n_clustering_components = clustering_components
+        self.n_components = n_visual_dim
         self.n_clusters = n_clusters
 
         self.decomposition_algorithm = decomposition_algorithm
         self.clustering_algorithm = clustering_algorithm
+        self.batched_fit = batched_fit
 
         self.decomposition = None
         self.clustering_labels = None
@@ -40,26 +105,35 @@ class LatentRepresentation:
         self.plot_name = name
         self.title = title
 
-    def decompose(self):
+    def decompose(self, clustering_decomp: bool = True):
+        if clustering_decomp:
+            n_components = self.n_clustering_components
+        else:
+            n_components = self.n_components
         try:
             decomp = {
                 "isomap": Isomap(
-                    n_components=self.n_components, n_neighbors=self.n_components
-                ).fit,
-                "pca": PCA(n_components=self.n_components).fit,
-                "t_sne": TSNE(n_components=self.n_components).fit,
+                    n_components=n_components, n_neighbors=self.n_clusters
+                ),
+                "pca": PCA(n_components=n_components),
+                "t_sne": TSNE(n_components=n_components),
             }[self.decomposition_algorithm]
+
         except KeyError:
             raise NotImplementedError(
                 f"Algorithm {self.decomposition_algorithm} not included."
             )
 
-        all_weights = np.concatenate([self.weights[p].cpu() for p in self.planes])
-        decomposition_engine = decomp(all_weights)
-        self.decomposition = {
-            plane: decomposition_engine.transform(self.weights[plane].cpu())
-            for plane in self.planes
-        }
+        fit = BatchedFit(
+            self.data_loader,
+            decomp,
+            max_features=30,
+            planes=self.planes,
+            embedding_function=self.embedding_function,
+        )
+        fit.fit()
+        decomposition = fit.transform()
+        return decomposition
 
     def cluster(self):
         try:
@@ -71,7 +145,7 @@ class LatentRepresentation:
             raise NotImplementedError("Clustering algorithm not implemented")
 
         if self.decomposition is None:
-            self.decompose()
+            self.decomposition = self.decompose(clustering_decomp=True)
 
         self.clustering_labels = {
             plane: np.argmax(clustering_algo(self.decomposition[plane]), axis=-1)
@@ -94,10 +168,13 @@ class LatentRepresentation:
             )
 
         if self.decomposition is None:
-            self.decompose()
+            self.decomposition = self.decompose(clustering_decomp=True)
 
         if self.clustering_labels is None:
             self.cluster()
+
+        if self.n_clustering_components != self.n_components:
+            self.decomposition = self.decompose(clustering_decomp=False)
 
         n_columns = 2 if self.true_labels is None else 3
         figure, subplots = plt.subplots(

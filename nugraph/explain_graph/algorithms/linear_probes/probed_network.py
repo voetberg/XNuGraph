@@ -1,9 +1,6 @@
 import torch
 import numpy as np
 import os
-import matplotlib.pyplot as plt
-from torch_geometric.data import HeteroData, Batch
-from torch_geometric.utils import unbatch
 
 import json
 from tqdm import tqdm
@@ -32,10 +29,9 @@ class DynamicProbedNetwork:
         out_path="./",
         make_latent_rep=False,
         make_embedding_rep=True,
-        feature_loss=["tracks", "hipmip"], 
-        network_target=['encoder', 'message', 'decoder']
+        feature_loss=["tracks", "hipmip"],
+        network_target=["encoder", "message", "decoder"],
     ) -> None:
-        
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = model
         self.model.train(False)
@@ -91,14 +87,16 @@ class DynamicProbedNetwork:
 
     def make_probe(self):
         input_function = {
-            'encoder': self.encoder_in_func, 
-             'message': lambda x: self.message_in_function(x, self.message_passing_steps), 
-             'decoder': self.decoder_in_func
+            "encoder": self.encoder_in_func,
+            "message": lambda x: self.message_in_function(
+                x, self.message_passing_steps
+            ),
+            "decoder": self.decoder_in_func,
         }
         input_size = {
-            'encoder': (self.model.planar_features, 1), 
-             'message': (self.model.planar_features, 1), 
-             'decoder': (len(self.semantic_classes), 1)
+            "encoder": (self.model.planar_features, 1),
+            "message": (self.model.planar_features, 1),
+            "decoder": (len(self.semantic_classes), 1),
         }
         loss_function = FeatureLoss(feature=self.feature_loss).loss
 
@@ -106,35 +104,34 @@ class DynamicProbedNetwork:
             in_shape=input_size[self.network_traget],
             input_function=input_function[self.network_traget],
             loss_function=loss_function,
-            device=self.device
-            )
+            device=self.device,
+        )
         return probe
 
-    def network_clustering(self): 
+    def network_clustering(self):
         layer_rep_outpath = f"{self.out_path.rstrip('/')}/clustering"
         if not os.path.exists(layer_rep_outpath):
             os.makedirs(layer_rep_outpath)
 
-        if self.make_latent_rep:
-            weights = self.extract_network_weights()
-            for name, weight in weights.items():
-                plot_name = f"weights_{name}"
-                title = f"Layer weights - {name.upper()}"
-                LatentRepresentation(
-                    weight, out_path=layer_rep_outpath, name=plot_name, title=title
-                ).visualize()
-
         if self.make_embedding_rep:
-            embeddings = self.extract_feature_embedding()
             labels = {
                 p: torch.concatenate([batch[p]["y_semantic"] for batch in self.data])
                 for p in self.planes
             }
-            for name, embedding in embeddings.items():
+
+            embedding_functions = {
+                "encode": self.encoder_in_func,
+                "message": lambda x: self.message_in_function(
+                    x, self.message_passing_steps
+                ),
+            }
+            for name, embedding in embedding_functions.items():
                 plot_name = f"feature_embedding_{name}"
                 title = f"Feature Embedding - {name.upper()}"
+
                 LatentRepresentation(
-                    embedding,
+                    embedding_function=embedding,
+                    data_loader=self.data,
                     true_labels=labels,
                     out_path=layer_rep_outpath,
                     name=plot_name,
@@ -182,49 +179,13 @@ class DynamicProbedNetwork:
         }
         return weights
 
-    def extract_feature_embedding(self):
-        embedding = {}
-
-        def extract_embedding(layer_func):
-            total_embedding = []
-
-            n_batches_use = 20
-            for n_batch, batch in enumerate(self.data):
-                if n_batch < n_batches_use: 
-                    embedding = layer_func(batch)
-
-                    total_embedding.append(embedding)
-
-            total_embedding = {
-                p: torch.concat(
-                    [
-                        embed[p]
-                        .reshape(
-                            embed[p].shape[0],
-                            int(np.prod(embed[p].shape) / embed[p].shape[0]),
-                        )
-                        .detach()
-                        for embed in total_embedding
-                    ]
-                )
-                for p in self.planes
-            }
-            return total_embedding
-
-        embedding["encoder"] = {
-            p: embed for p, embed in extract_embedding(self.encoder_in_func).items()
-        }
-        embedding["message"] = {
-            p: embed
-            for p, embed in extract_embedding(
-                lambda x: self.message_in_function(x, self.message_passing_steps)
-            ).items()
-        }
-        return embedding
-
     def save_progress(self):
-        with open(f"{self.out_path}/{self.feature_loss}_{self.network_traget}_probe_history.json", "w") as f:
+        with open(
+            f"{self.out_path}/{self.feature_loss}_{self.network_traget}_probe_history.json",
+            "w",
+        ) as f:
             json.dump(self.training_history, f)
+
 
 class TrainSingleProbe:
     def __init__(
