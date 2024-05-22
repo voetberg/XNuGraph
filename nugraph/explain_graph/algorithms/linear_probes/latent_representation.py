@@ -45,10 +45,11 @@ class BatchedFit:
                 if embedding.shape[0] != 0:
                     ravelled = embedding.reshape(
                         (embedding.shape[0], embedding.shape[1] * embedding.shape[2])
-                    )
+                    ).cpu()
                     pca = pca.partial_fit(ravelled)
 
             self.pca[plane] = pca
+        pass
 
     def transform(self):
         decomposition = {}
@@ -59,11 +60,24 @@ class BatchedFit:
                 if embedding.shape[0] != 0:
                     ravelled = embedding.reshape(
                         (embedding.shape[0], embedding.shape[1] * embedding.shape[2])
-                    )
+                    ).cpu()
                     pca_decomp.append(self.pca[plane].transform(ravelled))
 
             transformed = np.concatenate(pca_decomp)
-            decomposition[plane] = self.transform_function.fit_transform(transformed)
+            # whole thing is like. 10's of terabytes of memory to fit 
+            # So instead we will use a tiny little subset 
+            n_samples = int(transformed.shape[-1]/100)+1
+            fit_subset = transformed[:, -1*n_samples:]
+            self.transform_function.fit(fit_subset)
+
+            batched_decomposition = []
+            n_batches = len(self.loader)
+            batch_size = int(len(transformed)/n_batches)
+            batches = np.split(transformed[:,:n_batches*batch_size], n_batches, axis=-1)
+            for batch in batches: 
+                batched_decomposition.append(self.transform_function.tranform(batch))
+
+            decomposition[plane] = np.concatenate(batched_decomposition)
         return decomposition
 
 

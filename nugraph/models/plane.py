@@ -39,7 +39,7 @@ class MessagePassing2D(MessagePassing):
         return self.propagate(edge_index, x=x, size=None)
 
     def message(self, x_i: Tensor, x_j: Tensor):
-        return self.edge_net(cat((x_i, x_j), dim=-1).detach()) * x_j
+        return self.edge_net(cat((x_i, x_j), dim=-1)) * x_j
 
     def update(self, aggr_out: Tensor, x: Tensor):
         return self.node_net(cat((x, aggr_out), dim=-1))

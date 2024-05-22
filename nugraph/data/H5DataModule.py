@@ -28,6 +28,7 @@ class H5DataModule(LightningDataModule):
         balance_frac: float = 0.1,
         prepare: bool = False,
         add_features: bool = False,
+        device=None
     ):
         super().__init__()
 
@@ -43,7 +44,10 @@ class H5DataModule(LightningDataModule):
         self.shuffle = shuffle
         self.balance_frac = balance_frac
         self.add_features = add_features
-        self.device = "cuda" if cuda.is_available() else "cpu"
+        if device is None: 
+            self.device = "cuda" if cuda.is_available() else "cpu"
+        else: 
+            self.device = device 
 
         with h5py.File(self.filename) as f:
             # load metadata

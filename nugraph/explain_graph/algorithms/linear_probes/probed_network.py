@@ -4,6 +4,7 @@ import os
 
 import json
 from tqdm import tqdm
+from torch_geometric.loader import DataLoader
 
 from nugraph.explain_graph.algorithms.linear_probes.linear_decoder import (
     DynamicLinearDecoder,
@@ -16,11 +17,23 @@ from nugraph.util import RecallLoss
 from nugraph.explain_graph.algorithms.linear_probes.feature_loss import FeatureLoss
 
 
+from torch.utils.data.distributed import DistributedSampler
+from torch.distributed import init_process_group, destroy_process_group
+
+
+def group_setup(device, total_devices):
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "12355"
+    torch.cuda.set_device(device)
+    init_process_group(backend="nccl", rank=device, world_size=total_devices)
+
 class DynamicProbedNetwork:
     def __init__(
         self,
         model,
         data,
+        rank, 
+        total_devices,
         planes=["u", "v", "y"],
         semantic_classes=["MIP", "HIP", "shower", "michel", "diffuse"],
         loss_metric=RecallLoss(),
@@ -32,10 +45,13 @@ class DynamicProbedNetwork:
         feature_loss=["tracks", "hipmip"],
         network_target=["encoder", "message", "decoder"],
     ) -> None:
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model = model
+        
+        group_setup(rank, total_devices)
+        self.device = rank
+        self.model = model.to(rank)
         self.model.train(False)
-        self.data = data
+        self.model.freeze()
+        self.data = DataLoader(data, batch_size=64, shuffle=False, sampler=DistributedSampler(data))
 
         self.planes = planes
         self.semantic_classes = semantic_classes
@@ -62,24 +78,25 @@ class DynamicProbedNetwork:
         x = {plane: x[plane][:, : self.model.in_features] for plane in self.planes}
         return self.model.encoder(x)
 
-    def message_in_function(self, x, step):
-        m = self.encoder_in_func(x)
-        feat, edge_index_plane, edge_index_nexus, nexus, _ = self.model.unpack_batch(x)
-        feat = {
-            plane: feat[plane][:, : self.model.in_features] for plane in self.planes
-        }
+    def message_in_function(self, batch):
 
-        for _ in range(step):
+        x, edge_index_plane, edge_index_nexus, nexus, _ = self.model.unpack_batch(batch)
+        x = {plane: x[plane][:, : self.model.in_features] for plane in self.planes}
+        m = self.model.encoder(x)
+
+        for _ in range(self.message_passing_steps):
             # shortcut connect features
             for p in self.planes:
-                s = feat[p].detach().unsqueeze(1).expand(-1, m[p].size(1), -1)
+                s = x[p].detach().unsqueeze(1).expand(-1, m[p].size(1), -1)
                 m[p] = torch.cat((m[p], s), dim=-1)
+
             self.model.plane_net(m, edge_index_plane)
             self.model.nexus_net(m, edge_index_nexus, nexus)
+
         return m
 
     def decoder_in_func(self, x):
-        m = self.message_in_function(x, step=self.message_passing_steps)
+        m = self.message_in_function(x)
         _, _, _, _, batch = self.model.unpack_batch(x)
 
         decoder_out = self.model.semantic_decoder(m, batch)["x_semantic"]
@@ -88,9 +105,7 @@ class DynamicProbedNetwork:
     def make_probe(self):
         input_function = {
             "encoder": self.encoder_in_func,
-            "message": lambda x: self.message_in_function(
-                x, self.message_passing_steps
-            ),
+            "message": self.message_in_function,
             "decoder": self.decoder_in_func,
         }
         input_size = {
@@ -98,7 +113,7 @@ class DynamicProbedNetwork:
             "message": (self.model.planar_features, 1),
             "decoder": (len(self.semantic_classes), 1),
         }
-        loss_function = FeatureLoss(feature=self.feature_loss).loss
+        loss_function = FeatureLoss(feature=self.feature_loss, device=self.device).loss
 
         probe = DynamicLinearDecoder(
             in_shape=input_size[self.network_traget],
@@ -137,13 +152,14 @@ class DynamicProbedNetwork:
                     name=plot_name,
                     title=title,
                 ).visualize()
-
+        
     def train(self):
         self.network_clustering()
-        trainer = TrainSingleProbe(probe=self.probe, epochs=self.epochs)
+        trainer = TrainSingleProbe(probe=self.probe, epochs=self.epochs, device=self.device)
         loss = trainer.train_probe(self.data)
         self.training_history = loss
         self.save_progress()
+        destroy_process_group()
 
     def extract_network_weights(self):
         weights = {}
@@ -193,27 +209,35 @@ class TrainSingleProbe:
         probe: DynamicLinearDecoder,
         planes: list = ["v", "u", "y"],
         epochs: int = 25,
+        device=None
     ) -> None:
         self.probe = probe
         self.planes = planes
         self.epochs = epochs
-        self.optimizer = torch.optim.SGD(params=self.probe.parameters(), lr=0.001)
-
+        self.optimizer = torch.optim.Adam(params=self.probe.parameters(), lr=0.01)
+        self.device = device 
+        
     def train_step(self, batch):
-        self.probe.train(True)
-        prediction = self.probe.forward(batch)
+        m = self.probe.input_function(batch)
+
+        prediction = self.probe.forward(m)
         loss = self.probe.loss(prediction, batch)
         return loss
 
     def train_probe(self, data):
         training_history = []
-        for _ in range(self.epochs):
+        self.probe.train(True)
+        for epoch in range(self.epochs):
+            data.sampler.set_epoch(epoch)
             epoch_loss = 0
-            for batch in tqdm(data):
+
+            for batch in  (pbar := tqdm(data)):
                 loss = self.train_step(batch)
                 epoch_loss += loss
+                pbar.set_description(f"Loss: {round(loss.item(), 5)}")
+
             epoch_loss.backward()
             self.optimizer.step()
-            training_history.append(epoch_loss.item())
+            training_history.append(epoch_loss.item()/len(data))
 
         return training_history

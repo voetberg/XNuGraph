@@ -28,12 +28,10 @@ class DynamicLinearDecoder(torch.nn.Module):
     def class_decoder(self, in_shape):
         return torch.nn.Linear(*in_shape, self.num_classes).to(device=self.device)
 
-    def forward(self, x):
-        step_output = self.input_function(x)
-        return {
-            plane: self.softmax(self.decoder[plane](step_output[plane]))
-            for plane in self.planes
-        }
+    def forward(self, m):
+        for p in self.planes: 
+            m[p] = self.decoder[p](m[p])
+        return m
 
     def loss(self, y, y_hat):
         return self.loss_function(y, y_hat)

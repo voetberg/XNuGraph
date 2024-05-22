@@ -2,9 +2,12 @@ import torch
 
 
 class FeatureLoss:
-    def __init__(self, feature: str, planes: list = ["u", "v", "y"]) -> None:
+    def __init__(self, feature: str, planes: list = ["u", "v", "y"], device=None) -> None:
         self.planes = planes
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        if device is None: 
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        else: 
+            self.device = device
 
         self.func = {"tracks": self._tracks, "hipmip": self._hipmip}[feature]
 
