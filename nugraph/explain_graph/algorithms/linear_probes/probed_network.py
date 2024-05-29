@@ -43,15 +43,22 @@ class DynamicProbedNetwork:
         make_latent_rep=False,
         make_embedding_rep=True,
         feature_loss=["tracks", "hipmip"],
+        class_feature=bool, 
         network_target=["encoder", "message", "decoder"],
+        inference=False
     ) -> None:
         
-        group_setup(rank, total_devices)
+        if total_devices>1: 
+            group_setup(rank, total_devices)
+            self.data = DataLoader(data, batch_size=64, shuffle=False, sampler=DistributedSampler(data))
+        else: 
+            self.data = DataLoader(data, batch_size=64, shuffle=True)
+
+
         self.device = rank
         self.model = model.to(rank)
         self.model.train(False)
         self.model.freeze()
-        self.data = DataLoader(data, batch_size=64, shuffle=False, sampler=DistributedSampler(data))
 
         self.planes = planes
         self.semantic_classes = semantic_classes
@@ -65,10 +72,17 @@ class DynamicProbedNetwork:
         self.make_embedding_rep = make_embedding_rep
 
         self.feature_loss = feature_loss
-        self.network_traget = network_target
+        self.network_target = network_target
 
         self.training_history = {}
-        self.probe = self.make_probe()
+
+        n_out_features = len(self.semantic_classes) if class_feature else 1
+        self.probe = self.make_probe(n_out_features)
+
+        self.probe_name = f"{self.feature_loss}_{self.network_target}_m{self.message_passing_steps}"
+
+        if inference: 
+            self.load_probe()
 
         if not os.path.exists(os.path.dirname(self.out_path)):
             os.makedirs(self.out_path)
@@ -102,7 +116,7 @@ class DynamicProbedNetwork:
         decoder_out = self.model.semantic_decoder(m, batch)["x_semantic"]
         return decoder_out
 
-    def make_probe(self):
+    def make_probe(self, n_out_features):
         input_function = {
             "encoder": self.encoder_in_func,
             "message": self.message_in_function,
@@ -116,13 +130,18 @@ class DynamicProbedNetwork:
         loss_function = FeatureLoss(feature=self.feature_loss, device=self.device).loss
 
         probe = DynamicLinearDecoder(
-            in_shape=input_size[self.network_traget],
-            input_function=input_function[self.network_traget],
+            in_shape=input_size[self.network_target],
+            out_shape=n_out_features,
+            input_function=input_function[self.network_target],
             loss_function=loss_function,
             device=self.device,
         )
         return probe
 
+    def load_probe(self): 
+        self.probe.load_state_dict(torch.load(f"{self.out_path}/{self.probe_name}_probe_weights.pt"))
+        self.probe.eval()
+        
     def network_clustering(self):
         layer_rep_outpath = f"{self.out_path.rstrip('/')}/clustering"
         if not os.path.exists(layer_rep_outpath):
@@ -152,7 +171,31 @@ class DynamicProbedNetwork:
                     name=plot_name,
                     title=title,
                 ).visualize()
+    
+    def forward_probe(self): 
+        track_loss = []
+        hipmip_loss = []
+
+        for batch in tqdm(self.data):
+            m = self.probe.input_function(batch)
+            prediction = self.probe.forward(m)
+
+            track_loss.append(FeatureLoss(feature="tracks", device=self.device).loss(prediction, batch).item())
+            hipmip_loss.append(FeatureLoss(feature="hipmip", device=self.device).loss(prediction, batch).item())
         
+        output = {
+            self.probe_name: {"track": np.mean(np.array(track_loss)), "hipmip": np.mean(np.array(hipmip_loss))}
+        }
+
+        with open(f"{self.out_path}/inference.json", "r+") as f:
+            try: 
+                existing = json.load(f)
+            except FileNotFoundError: 
+                existing = {}
+
+            new = existing.update(output)
+            json.dump(new, f)
+
     def train(self):
         self.network_clustering()
         trainer = TrainSingleProbe(probe=self.probe, epochs=self.epochs, device=self.device)
@@ -197,10 +240,15 @@ class DynamicProbedNetwork:
 
     def save_progress(self):
         with open(
-            f"{self.out_path}/{self.feature_loss}_{self.network_traget}_probe_history.json",
+            f"{self.out_path}/{self.probe_name}_probe_history.json",
             "w",
         ) as f:
             json.dump(self.training_history, f)
+        
+        torch.save(
+            self.probe.state_dict(),
+            f"{self.out_path}/{self.probe_name}_probe_weights.pt"
+        )
 
 
 class TrainSingleProbe:

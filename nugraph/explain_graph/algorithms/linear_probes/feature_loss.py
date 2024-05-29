@@ -1,5 +1,5 @@
 import torch
-
+from nugraph.data.feature_generation import FeatureGeneration
 
 class FeatureLoss:
     def __init__(self, feature: str, planes: list = ["u", "v", "y"], device=None) -> None:
@@ -9,7 +9,10 @@ class FeatureLoss:
         else: 
             self.device = device
 
-        self.func = {"tracks": self._tracks, "hipmip": self._hipmip}[feature]
+        self.func = {
+            "tracks": self._tracks, 
+            "hipmip": self._hipmip,
+        }[feature]
 
     def loss(self, y_hat, y):
         loss = 0
@@ -62,3 +65,14 @@ class FeatureLoss:
         except IndexError:
             print(y_hat, y)
         return loss
+
+    def _node_slope(self, x, label): 
+        """
+        Predict the node slope and compare it to the truth
+        """
+        y = FeatureGeneration().node_slope(label)
+        y_hat = x
+        return torch.nn.MSELoss()(y_hat, y)
+    
+    # def _edg
+        

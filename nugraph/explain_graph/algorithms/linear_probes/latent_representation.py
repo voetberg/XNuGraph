@@ -1,5 +1,6 @@
 from typing import Sequence
-from sklearn.manifold import TSNE, Isomap
+from sklearn.manifold import Isomap, TSNE
+
 from sklearn.decomposition import PCA, IncrementalPCA
 from sklearn.cluster import DBSCAN, KMeans
 
@@ -8,7 +9,7 @@ from sklearn.metrics import silhouette_samples
 from matplotlib import pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
-
+from tqdm import tqdm
 
 class BatchedFit:
     def __init__(
@@ -17,7 +18,7 @@ class BatchedFit:
         transform,
         planes,
         embedding_function,
-        max_features=50,
+        max_features=20,
         batch_size=200,
     ) -> None:
         self.batch_size = batch_size
@@ -27,21 +28,25 @@ class BatchedFit:
         self.batch_size = batch_size
         self.loader = dataloader
         self.transform_function = transform
+        self.trained_transfrom = {}
         self.embedding_function = embedding_function
+
 
     def fit(self):
         # Following the recommendation of
         # the original author and refusing it down via PCA first
         # PCA Can handle batching
 
+
         for plane in self.planes:
             pca = IncrementalPCA(
                 n_components=self.max_features, batch_size=self.batch_size
             )
+            for batch_index, batch in enumerate(tqdm(self.loader, desc=f'Training PCA for Plane {plane}...')):
 
-            for batch in self.loader:
                 # get the embedding of the batch
                 embedding = self.embedding_function(batch)[plane].detach()
+
                 if embedding.shape[0] != 0:
                     ravelled = embedding.reshape(
                         (embedding.shape[0], embedding.shape[1] * embedding.shape[2])
@@ -49,36 +54,39 @@ class BatchedFit:
                     pca = pca.partial_fit(ravelled)
 
             self.pca[plane] = pca
-        pass
+
+            # Then fit the actual transform 
+            decomp = []
+            for batch_index, batch in enumerate(tqdm(self.loader, desc=f'Training Decomposition for Plane {plane}...')): 
+                if batch_index<= 0.25*len(self.loader): # Only uses a subset here 
+
+                    embedding = self.embedding_function(batch)
+
+                    ravelled = embedding[plane].reshape(
+                                (embedding[plane].shape[0], embedding[plane].shape[1] * embedding[plane].shape[2])
+                            ).detach().cpu()
+                    
+                    decomp.append(self.pca[plane].transform(ravelled))
+            
+            self.trained_transfrom[plane] = self.transform_function.fit(np.concatenate(decomp))
 
     def transform(self):
-        decomposition = {}
-        for plane in self.planes:
-            pca_decomp = []
-            for batch in self.loader:
-                embedding = self.embedding_function(batch)[plane].detach()
-                if embedding.shape[0] != 0:
-                    ravelled = embedding.reshape(
-                        (embedding.shape[0], embedding.shape[1] * embedding.shape[2])
-                    ).cpu()
-                    pca_decomp.append(self.pca[plane].transform(ravelled))
+        batched_decomp = {plane:[] for plane in self.planes}
 
-            transformed = np.concatenate(pca_decomp)
-            # whole thing is like. 10's of terabytes of memory to fit 
-            # So instead we will use a tiny little subset 
-            n_samples = int(transformed.shape[-1]/100)+1
-            fit_subset = transformed[:, -1*n_samples:]
-            self.transform_function.fit(fit_subset)
+        for batch in tqdm(self.loader, desc="Transforming..."): 
 
-            batched_decomposition = []
-            n_batches = len(self.loader)
-            batch_size = int(len(transformed)/n_batches)
-            batches = np.split(transformed[:,:n_batches*batch_size], n_batches, axis=-1)
-            for batch in batches: 
-                batched_decomposition.append(self.transform_function.tranform(batch))
+            embedding = self.embedding_function(batch)
 
-            decomposition[plane] = np.concatenate(batched_decomposition)
-        return decomposition
+            for plane in self.planes: 
+                ravelled = embedding.reshape(
+                        (embedding[plane].shape[0], embedding[plane].shape[1] * embedding[plane].shape[2])
+                    ).detach().cpu()
+                decomp = self.pca[plane].transform(ravelled)
+                batched_decomp[plane].append(self.trained_transfrom[plane].tranform(decomp))
+
+            batched_decomp[plane] = np.concatenate(batched_decomp[plane])
+
+        return batched_decomp
 
 
 class LatentRepresentation:
@@ -92,7 +100,7 @@ class LatentRepresentation:
         title="",
         n_visual_dim=2,
         n_clusters=5,
-        clustering_components: int = 12,
+        clustering_components: int = 2,
         true_labels=None,
         decomposition_algorithm="isomap",
         clustering_algorithm="kmeans",
