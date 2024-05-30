@@ -9,10 +9,17 @@ class FeatureLoss:
         else: 
             self.device = device
 
-        self.func = {
+        included_features = {
             "tracks": self._tracks, 
             "hipmip": self._hipmip,
-        }[feature]
+            "node_slope": self._node_slope, 
+            "michel_conservation": self._michel_required
+        }
+
+        for index, feat in enumerate(['wire', 'peak', 'integral', 'rms']): 
+            included_features[feat] = lambda y_hat, y: self._node_feature(y_hat, y, index)
+
+        self.func = included_features[feature]
 
     def loss(self, y_hat, y):
         loss = 0
@@ -73,6 +80,52 @@ class FeatureLoss:
         y = FeatureGeneration().node_slope(label)
         y_hat = x
         return torch.nn.MSELoss()(y_hat, y)
-    
-    # def _edg
-        
+
+    def _node_feature(self, x, label, feature_index): 
+        """
+        X is a prediction of a node feature 
+        """
+        y = label.collect('x')[:, feature_index]
+        y_hat = x
+        return torch.nn.MSELoss(y_hat, y)
+
+    def _michel_required(self, x, label): 
+        """
+        If there is a michel, there must be a mip track 
+
+        """
+
+        michel_index = 3 
+        mip_index = 0
+
+        def michel_ratio(labels): 
+            n_michel = labels * torch.where(
+                torch.tensor([1], device=self.device),
+                torch.isin(labels, torch.tensor([michel_index], device=self.device)),
+                other=torch.tensor([0], device=self.device))
+            n_michel = torch.sum(n_michel)
+
+            n_mip = labels * torch.where(
+                torch.tensor([1], device=self.device),
+                torch.isin(labels, torch.tensor([mip_index], device=self.device)),
+                other=torch.tensor([0], device=self.device))
+            n_mip = torch.sum(n_mip)
+            try: 
+                n_mip = 1/n_mip 
+            except DivisionByZeroError: 
+                n_mip = torch.NaN 
+
+            return 1/(n_michel - n_mip)
+
+        y_hat = torch.argmax(torch.nn.functional.softmax(x, dim=-1), dim=-1)
+        y_hat_loss = michel_ratio(y_hat)
+
+        return y_hat_loss
+
+    def _michel_energy(self, x, label):
+        """
+        Michel is within a known mass - so there is a low energy range in which it can be
+        Just look at all the hit integral of specifically michel 
+            - Energy and momentum is conserved, there's a vague linear relationship 
+        """
+        pass

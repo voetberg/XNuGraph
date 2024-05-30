@@ -23,7 +23,7 @@ from torch.distributed import init_process_group, destroy_process_group
 
 def group_setup(device, total_devices):
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12355"
+    os.environ["MASTER_PORT"] = "8090"
     torch.cuda.set_device(device)
     init_process_group(backend="nccl", rank=device, world_size=total_devices)
 
@@ -45,12 +45,14 @@ class DynamicProbedNetwork:
         feature_loss=["tracks", "hipmip"],
         class_feature=bool, 
         network_target=["encoder", "message", "decoder"],
-        inference=False
+        inference=False,
+        multicore=True
     ) -> None:
         
-        if total_devices>1: 
+        if multicore: 
             group_setup(rank, total_devices)
             self.data = DataLoader(data, batch_size=64, shuffle=False, sampler=DistributedSampler(data))
+        
         else: 
             self.data = DataLoader(data, batch_size=64, shuffle=True)
 
@@ -198,11 +200,17 @@ class DynamicProbedNetwork:
 
     def train(self):
         self.network_clustering()
-        trainer = TrainSingleProbe(probe=self.probe, epochs=self.epochs, device=self.device)
-        loss = trainer.train_probe(self.data)
-        self.training_history = loss
-        self.save_progress()
+
+        if not os.path.exists(f"{self.out_path}/{self.probe_name}_probe_history.json"):
+            trainer = TrainSingleProbe(probe=self.probe, epochs=self.epochs, device=self.device)
+            loss = trainer.train_probe(self.data)
+            self.training_history = loss
+            self.save_progress()
+        else: 
+            print(f"{self.probe_name} already has results, skipping...")
+        
         destroy_process_group()
+
 
     def extract_network_weights(self):
         weights = {}
@@ -250,6 +258,8 @@ class DynamicProbedNetwork:
             f"{self.out_path}/{self.probe_name}_probe_weights.pt"
         )
 
+    def visualize_results(self): 
+        pass
 
 class TrainSingleProbe:
     def __init__(
@@ -275,17 +285,19 @@ class TrainSingleProbe:
     def train_probe(self, data):
         training_history = []
         self.probe.train(True)
-        for epoch in range(self.epochs):
+        for epoch in (pbar := tqdm(range(self.epochs))):
             data.sampler.set_epoch(epoch)
             epoch_loss = 0
 
-            for batch in  (pbar := tqdm(data)):
+            for batch in data:
                 loss = self.train_step(batch)
                 epoch_loss += loss
-                pbar.set_description(f"Loss: {round(loss.item(), 5)}")
+            
 
             epoch_loss.backward()
             self.optimizer.step()
-            training_history.append(epoch_loss.item()/len(data))
+            loss = epoch_loss.item()/len(data)
+            training_history.append(loss)
+            pbar.set_description(f"Loss: {round(loss, 5)}")
 
         return training_history

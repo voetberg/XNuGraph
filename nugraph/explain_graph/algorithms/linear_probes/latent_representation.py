@@ -58,7 +58,7 @@ class BatchedFit:
             # Then fit the actual transform 
             decomp = []
             for batch_index, batch in enumerate(tqdm(self.loader, desc=f'Training Decomposition for Plane {plane}...')): 
-                if batch_index<= 0.25*len(self.loader): # Only uses a subset here 
+                if batch_index<= 2:
 
                     embedding = self.embedding_function(batch)
 
@@ -66,7 +66,7 @@ class BatchedFit:
                                 (embedding[plane].shape[0], embedding[plane].shape[1] * embedding[plane].shape[2])
                             ).detach().cpu()
                     
-                    decomp.append(self.pca[plane].transform(ravelled))
+                    decomp.append(self.pca[plane].transform(ravelled).astype(np.float16))
             
             self.trained_transfrom[plane] = self.transform_function.fit(np.concatenate(decomp))
 
@@ -134,9 +134,7 @@ class LatentRepresentation:
             n_components = self.n_components
         try:
             decomp = {
-                "isomap": Isomap(
-                    n_components=n_components, n_neighbors=self.n_clusters
-                ),
+                "isomap": Isomap(n_components=n_components, n_neighbors=self.n_clusters),
                 "pca": PCA(n_components=n_components),
                 "t_sne": TSNE(n_components=n_components),
             }[self.decomposition_algorithm]
