@@ -4,9 +4,11 @@ from nugraph.explain_graph.explain_edges import (
     GlobalGNNExplain,
     GNNExplainerPrune,
     ClasswiseGNNExplain,
+    FilteredExplainEdges,
 )
 from nugraph.explain_graph.explain_features import (
     GNNExplainerHits,
+    FilteredExplainedHits,
 )
 
 from nugraph.explain_graph.explain_difference import GNNExplainerDifference
@@ -20,4 +22,6 @@ __all__ = [
     "GNNExplainerHits",
     "GNNExplainFeatures",
     "GNNExplainerDifference",
+    "FilteredExplainEdges",
+    "FilteredExplainedHits",
 ]

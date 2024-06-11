@@ -2,16 +2,18 @@ from typing import Iterable
 from pynuml import io
 
 import h5py
+import torch
 from torch_geometric.explain import ModelConfig
 from torch_geometric.data import HeteroData
 from datetime import datetime
 
 from nugraph.explain_graph.explain import ExplainLocal
 from nugraph.explain_graph.utils.edge_visuals import EdgeVisuals
-from nugraph.explain_graph.algorithms.hetero_gnnexplaner import (
-    HeteroGNNExplainer,
+from nugraph.explain_graph.algorithms.hetero_gnnexplainer import (
     HeteroExplainer,
+    HeteroGNNExplainer,
 )
+
 from nugraph.explain_graph.algorithms.class_hetero_gnnexplainer import (
     MultiEdgeHeteroGNNExplainer,
 )
@@ -272,3 +274,128 @@ class GNNExplainerPrune(GlobalGNNExplain):
         )
         masked_graph["edge_mask"] = edge_mask
         return masked_graph
+
+
+class FilteredExplainEdges(GlobalGNNExplain):
+    def __init__(
+        self,
+        data_path: str,
+        out_path: str = "explainations/",
+        checkpoint_path: str = None,
+        batch_size: int = 16,
+        test: bool = False,
+        planes=["u", "v", "y"],
+        n_batches=None,
+        message_passing_steps=5,
+        n_epochs=200,
+        node_filter=True,
+        background_filter=False,
+    ):
+        super().__init__(
+            data_path,
+            out_path,
+            checkpoint_path,
+            batch_size,
+            test,
+            planes,
+            n_batches,
+            message_passing_steps,
+            n_epochs,
+        )
+
+        self.background_filter = background_filter
+        self.node_filter = node_filter
+        self.classes = ("MIP", "HIP", "shower", "michel", "diffuse")
+
+    def filter_graph(self, graph):
+        if self.background_filter:
+            mask = {
+                plane: torch.logical_not(
+                    torch.isin(graph.collect("y_semantic")[plane], torch.tensor([-1]))
+                )
+                for plane in ["u", "v", "y"]
+            }
+
+        else:
+            mask = {
+                plane: torch.logical_not(
+                    torch.isin(
+                        graph.collect("y_semantic")[plane], torch.tensor([-1, 2, 4])
+                    )
+                )
+                for plane in ["u", "v", "y"]
+            }
+
+        return get_masked_graph(
+            graph,
+            node_mask=mask,
+            planes=self.planes,
+            mask_strategy=self.masking_strat,
+        )
+
+    def visualize(self, explaination, file_name=None, *args, **kwargs):
+        subgraph_masked = [self.get_explanation_subgraph(g) for g in explaination]
+        edge_length_plotter = EdgeLengthDistribution(
+            out_path=self.out_path,
+            include_nexus=False,
+            planes=self.planes,
+            semantic_classes=self.classes,
+        )
+
+        edge_length_plotter.plot(
+            graph=subgraph_masked,
+            style="scatter",
+            split="all",
+            file_name=f"{file_name}_length_corr.png",
+        )
+
+        edge_length_plotter.plot(
+            graph=subgraph_masked,
+            style="histogram",
+            split="all",
+            file_name=f"{file_name}_length_dist.png",
+        )
+
+    def single_visual(self, explain, index):
+        subgraph = self.get_explanation_subgraph(explain)
+        EdgeVisuals(planes=self.planes).plot(
+            graph=subgraph,
+            ghost_plot=explain,
+            outdir=self.out_path,
+            file_name=f"subgraph_{index}.png",
+            nexus_distribution=True,
+        )
+
+    def explain(self, data):
+        try:
+            len(data)
+        except Exception:
+            data = [data]
+
+        if self.load.test:
+            data = [data[0]]
+
+        for graph_index, graph in enumerate(data):
+            EdgeVisuals(planes=self.planes).event_plot(
+                graph=graph,
+                outdir=self.out_path,
+                file_name=f"event_{graph_index}.png",
+            )
+
+            filtered_graph = self.filter_graph(graph=graph)
+
+            self.model(*self.load.unpack(filtered_graph))
+            EdgeVisuals(planes=self.planes).event_plot(
+                graph=filtered_graph,
+                outdir=self.out_path,
+                file_name=f"event_filtered_all_remote_{graph_index}.png",
+            )
+
+            # explaination = self.explainer(graph=filtered_graph)
+            # self.single_visual(explaination, graph_index)
+            # metrics = self.calculate_metrics(explaination)
+            # self.metrics[str(len(self.metrics))] = metrics
+
+            # self.explainations.append(explaination)
+
+        return self.explainations

@@ -88,13 +88,18 @@ class EdgeVisuals:
             pos = graph.collect("pos")[plane]
 
             for enum, hit in enumerate(nexus_edges):
-                planar_hit = pos[enum][0]
-                hits_y = [
-                    planar_hit,  # planar hit
-                    enum + planar_hit,  # nexus hit
-                ]
+                try:
+                    planar_hit = pos[enum][0]
+                    hits_y = [
+                        planar_hit,  # planar hit
+                        enum + planar_hit,  # nexus hit
+                    ]
 
-                plot.plot([0, 1], hits_y, lw=hit * 2, c=colors[plane_index], alpha=0.05)
+                    plot.plot(
+                        [0, 1], hits_y, lw=hit * 2, c=colors[plane_index], alpha=0.05
+                    )
+                except IndexError:
+                    pass
 
         plot.set_title("Nexus Weight Importance")
 
@@ -194,7 +199,9 @@ class EdgeVisuals:
             except IndexError:
                 pass
 
-    def event_plot(self, graph, outdir, file_name="event_display.png", title=""):
+    def event_plot(
+        self, graph, outdir, file_name="event_display.png", title="", node_labels=None
+    ):
         n_yplot = 3
         n_xplot = len(self.planes)
         figure, subplots = plt.subplots(
@@ -225,6 +232,12 @@ class EdgeVisuals:
             true_labels = graph.collect("y_semantic")[plane]
 
             predict_label = torch.argmax(graph.collect("x_semantic")[plane], axis=1)
+
+            if node_labels is not None:
+                for xi, yi, label in zip(x, y, node_labels[plane]):
+                    subplot[2].text(
+                        xi, yi, label.item(), va="bottom", ha="center", fontsize="small"
+                    )
 
             largest = np.max(np.array(graph.collect("x_semantic")[plane]), axis=1)
             second = np.partition(

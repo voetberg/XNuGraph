@@ -62,26 +62,34 @@ def mask_nodes(
     make_nan: bool = True,
 ):
     new_nodes = {}
+    new_pos = {}
     for plane in planes:
-        mask = node_mask[plane].sigmoid()
-        node_features = graph[plane]["x"][:, :4]
+        try:
+            mask = node_mask[plane].sigmoid()
+            node_features = graph[plane]["x"][:, :4]
 
-        if make_nan:
-            mask[mask < 0.5] = torch.nan
+            if make_nan:
+                mask[mask < 0.5] = torch.nan
 
-        if marginalize:
-            z = torch.normal(
-                mean=torch.zeros_like(node_features, dtype=torch.float) - node_features,
-                std=torch.ones_like(node_features, dtype=torch.float) / 2,
-            )
-            new_nodes[plane] = node_features + z * (1 - mask)
+            if marginalize:
+                z = torch.normal(
+                    mean=torch.zeros_like(node_features, dtype=torch.float)
+                    - node_features,
+                    std=torch.ones_like(node_features, dtype=torch.float) / 2,
+                )
+                new_nodes[plane] = node_features + z * (1 - mask)
 
-        else:
-            new_nodes[plane] = node_features * mask
+            else:
+                new_nodes[plane] = node_features * mask
+        except RuntimeError:
+            new_pos[plane] = node_mask[plane]
 
     new_graph = copy.deepcopy(graph)
     for key, nodes in new_nodes.items():
         new_graph[key]["x"] = nodes
+
+    if new_pos != {}:
+        new_graph = new_graph.subgraph(new_pos)
 
     return new_graph
 
@@ -110,13 +118,20 @@ def get_masked_graph(
     edge_mask: Optional[dict] = None,
     node_mask: Optional[dict] = None,
     mask_strategy: MaskStrats = MaskStrats.top_quartile,
+    marginalize_nodes: bool = True,
     planes: list[str] = ["u", "v", "y"],
     make_nodes_nan: bool = True,
 ):
     node_mask = node_mask if node_mask != {} else None
     edge_mask = edge_mask if edge_mask != {} else None
     if node_mask is not None:
-        graph = mask_nodes(graph, node_mask, planes, make_nan=make_nodes_nan)
+        graph = mask_nodes(
+            graph,
+            node_mask,
+            planes,
+            make_nan=make_nodes_nan,
+            marginalize=marginalize_nodes,
+        )
     if edge_mask is not None:
         graph = mask_edges(graph, edge_mask, planes, mask_strategy=mask_strategy)
 

@@ -3,7 +3,7 @@ import os
 import json
 from torch_geometric.explain import ModelConfig
 
-from nugraph.explain_graph.algorithms.hetero_gnnexplaner import (
+from nugraph.explain_graph.algorithms.hetero_gnnexplainer import (
     HeteroExplainer,
     HeteroGNNExplainer,
 )

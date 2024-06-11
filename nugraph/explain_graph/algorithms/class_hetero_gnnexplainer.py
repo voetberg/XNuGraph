@@ -1,4 +1,4 @@
-from nugraph.explain_graph.algorithms.hetero_gnnexplaner import HeteroGNNExplainer
+from nugraph.explain_graph.algorithms.hetero_gnnexplainer import HeteroGNNExplainer
 
 import copy
 import torch

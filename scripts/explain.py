@@ -1,29 +1,32 @@
 from nugraph.explain_graph import (
     GlobalGNNExplain,
     ClasswiseGNNExplain,
-    GNNExplainFeatures,
     GNNExplainerPrune,
     ExplainNetwork,
     DynamicExplainNetwork,
     GNNExplainerHits,
     GNNExplainerDifference,
+    FilteredExplainEdges,
+    FilteredExplainedHits,
 )
 
 import os
 import argparse
 from datetime import datetime
+import torch
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 explainations = {
     "Edges": GlobalGNNExplain,
     "Probe": ExplainNetwork,
-    "Features": GNNExplainFeatures,
     "ClassEdges": ClasswiseGNNExplain,
     "DynamicProbe": DynamicExplainNetwork,
     "Prune": GNNExplainerPrune,
     "Hits": GNNExplainerHits,
     "Difference": GNNExplainerDifference,
+    "FilterEdge": FilteredExplainEdges,
+    "FilterNode": FilteredExplainedHits,
 }
 
 
@@ -89,6 +92,7 @@ def run_explaination(
     for n_steps in message_passing_steps:
         exp_outfile = f"{outfile.rstrip('/')}/{algorithm}_{n_steps}_steps/{file_name}/"
 
+        torch.autograd.set_detect_anomaly(True)
         explain = explainations[algorithm](
             data_path=data_path,
             out_path=exp_outfile,

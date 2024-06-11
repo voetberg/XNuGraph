@@ -3,7 +3,7 @@ import tqdm
 
 import torch
 
-from nugraph.explain_graph.algorithms.hetero_gnnexplaner import HeteroGNNExplainer
+from nugraph.explain_graph.algorithms.hetero_gnnexplainer import HeteroGNNExplainer
 from nugraph.explain_graph.utils.masking_utils import get_masked_graph
 from nugraph.util.RecallLoss import RecallLoss
 
