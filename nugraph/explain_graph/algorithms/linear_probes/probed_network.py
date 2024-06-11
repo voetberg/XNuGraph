@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import matplotlib.pyplot as plt
 import os
 
 import json
@@ -119,11 +120,6 @@ class DynamicProbedNetwork:
         return decoder_out
 
     def make_probe(self, n_out_features):
-        input_function = {
-            "encoder": self.encoder_in_func,
-            "message": self.message_in_function,
-            "decoder": self.decoder_in_func,
-        }
         input_size = {
             "encoder": (self.model.planar_features, 1),
             "message": (self.model.planar_features, 1),
@@ -134,11 +130,19 @@ class DynamicProbedNetwork:
         probe = DynamicLinearDecoder(
             in_shape=input_size[self.network_target],
             out_shape=n_out_features,
-            input_function=input_function[self.network_target],
+            input_function=self.embedding_function(),
             loss_function=loss_function,
             device=self.device,
         )
         return probe
+
+    def embedding_function(self) -> callable:
+        return {
+            "encoder": self.encoder_in_func,
+            "message": self.message_in_function,
+            "decoder": self.decoder_in_func,
+        }[self.network_target]
+
 
     def load_probe(self): 
         self.probe.load_state_dict(torch.load(f"{self.out_path}/{self.probe_name}_probe_weights.pt"))
@@ -155,41 +159,39 @@ class DynamicProbedNetwork:
                 for p in self.planes
             }
 
-            embedding_functions = {
-                "encode": self.encoder_in_func,
-                "message": lambda x: self.message_in_function(
-                    x, self.message_passing_steps
-                ),
-            }
-            for name, embedding in embedding_functions.items():
-                plot_name = f"feature_embedding_{name}"
-                title = f"Feature Embedding - {name.upper()}"
+            plot_name = f"feature_embedding_{self.probe_name}"
+            title = f"Feature Embedding - {self.probe_name.split('_')[1].upper()}_{self.probe_name.split('_')[2].upper()}"
 
-                LatentRepresentation(
-                    embedding_function=embedding,
-                    data_loader=self.data,
-                    true_labels=labels,
-                    out_path=layer_rep_outpath,
-                    name=plot_name,
-                    title=title,
-                ).visualize()
-    
+            LatentRepresentation(
+                embedding_function=self.embedding_function(),
+                data_loader=self.data,
+                true_labels=labels,
+                out_path=layer_rep_outpath,
+                name=plot_name,
+                title=title,
+            ).visualize()
+            
+            destroy_process_group()
+
+
     def forward_probe(self): 
-        track_loss = []
-        hipmip_loss = []
+        losses = FeatureLoss(features="tracks").included_features.keys()
+        active_loss = {loss: [] for loss in losses}
 
         for batch in tqdm(self.data):
             m = self.probe.input_function(batch)
             prediction = self.probe.forward(m)
 
-            track_loss.append(FeatureLoss(feature="tracks", device=self.device).loss(prediction, batch).item())
-            hipmip_loss.append(FeatureLoss(feature="hipmip", device=self.device).loss(prediction, batch).item())
-        
-        output = {
-            self.probe_name: {"track": np.mean(np.array(track_loss)), "hipmip": np.mean(np.array(hipmip_loss))}
-        }
+            for loss in losses: 
+                active_loss[loss].append(FeatureLoss(loss, device=self.device).loss(prediction, batch))
 
-        with open(f"{self.out_path}/inference.json", "r+") as f:
+        output = {self.probe_name: {
+            loss_name: np.mean(np.array(loss_value))
+            for loss_name, loss_value 
+            in active_loss.items()
+        }}
+
+        with open(f"{self.out_path}/inference.json", "r+w") as f:
             try: 
                 existing = json.load(f)
             except FileNotFoundError: 
@@ -206,11 +208,11 @@ class DynamicProbedNetwork:
             loss = trainer.train_probe(self.data)
             self.training_history = loss
             self.save_progress()
+            self.forward_probe()
         else: 
             print(f"{self.probe_name} already has results, skipping...")
         
         destroy_process_group()
-
 
     def extract_network_weights(self):
         weights = {}
@@ -258,9 +260,6 @@ class DynamicProbedNetwork:
             f"{self.out_path}/{self.probe_name}_probe_weights.pt"
         )
 
-    def visualize_results(self): 
-        pass
-
 class TrainSingleProbe:
     def __init__(
         self,
@@ -292,7 +291,6 @@ class TrainSingleProbe:
             for batch in data:
                 loss = self.train_step(batch)
                 epoch_loss += loss
-            
 
             epoch_loss.backward()
             self.optimizer.step()
@@ -301,3 +299,14 @@ class TrainSingleProbe:
             pbar.set_description(f"Loss: {round(loss, 5)}")
 
         return training_history
+
+def visualize_all_probes(results_dir): 
+    # Get all the inferences and start a plottin'
+    
+    inference = json.load(open(f"{results_dir.rstrip('/')}/inference.json", 'r'))
+    losses = FeatureLoss(features="tracks").included_features.keys()
+
+    figure, subplots = plt.subplots(len(losses), len(losses))
+    probe_names = inference.keys()
+    for loss in losses: 
+        ""

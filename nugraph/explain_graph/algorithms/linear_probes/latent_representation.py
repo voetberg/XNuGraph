@@ -1,8 +1,9 @@
+import json
 from typing import Sequence
 from sklearn.manifold import Isomap, TSNE
 
 from sklearn.decomposition import PCA, IncrementalPCA
-from sklearn.cluster import DBSCAN, KMeans
+from sklearn.cluster import DBSCAN, KMeans, MiniBatchKMeans
 
 from sklearn.metrics import silhouette_samples
 
@@ -17,7 +18,7 @@ class BatchedFit:
         dataloader,
         transform,
         planes,
-        embedding_function,
+        embedding_function=None,
         max_features=20,
         batch_size=200,
     ) -> None:
@@ -31,19 +32,18 @@ class BatchedFit:
         self.trained_transfrom = {}
         self.embedding_function = embedding_function
 
-
     def fit(self):
         # Following the recommendation of
         # the original author and refusing it down via PCA first
         # PCA Can handle batching
-
 
         for plane in self.planes:
             pca = IncrementalPCA(
                 n_components=self.max_features, batch_size=self.batch_size
             )
             for batch_index, batch in enumerate(tqdm(self.loader, desc=f'Training PCA for Plane {plane}...')):
-
+                if batch_index>0.25*len(self.loader): 
+                        continue 
                 # get the embedding of the batch
                 embedding = self.embedding_function(batch)[plane].detach()
 
@@ -56,10 +56,12 @@ class BatchedFit:
             self.pca[plane] = pca
 
             # Then fit the actual transform 
-            decomp = []
-            for batch_index, batch in enumerate(tqdm(self.loader, desc=f'Training Decomposition for Plane {plane}...')): 
-                if batch_index<= 2:
+            if self.transform_function is not None: 
 
+                decomp = []
+                for batch_index, batch in enumerate(tqdm(self.loader, desc=f'Training Decomposition for Plane {plane}...')): 
+                    if batch_index>0.25*len(self.loader): 
+                        continue 
                     embedding = self.embedding_function(batch)
 
                     ravelled = embedding[plane].reshape(
@@ -68,26 +70,60 @@ class BatchedFit:
                     
                     decomp.append(self.pca[plane].transform(ravelled).astype(np.float16))
             
-            self.trained_transfrom[plane] = self.transform_function.fit(np.concatenate(decomp))
+                self.trained_transfrom[plane] = self.transform_function.fit(np.concatenate(decomp))
+            
+            else: 
+                self.trained_transfrom[plane] = self.pca[plane]
 
     def transform(self):
         batched_decomp = {plane:[] for plane in self.planes}
+        for plane in self.planes: 
+            for batch in tqdm(self.loader, desc=f"Transforming Plane {plane}..."): 
 
-        for batch in tqdm(self.loader, desc="Transforming..."): 
-
-            embedding = self.embedding_function(batch)
-
-            for plane in self.planes: 
-                ravelled = embedding.reshape(
+                embedding = self.embedding_function(batch)
+                ravelled = embedding[plane].reshape(
                         (embedding[plane].shape[0], embedding[plane].shape[1] * embedding[plane].shape[2])
                     ).detach().cpu()
                 decomp = self.pca[plane].transform(ravelled)
-                batched_decomp[plane].append(self.trained_transfrom[plane].tranform(decomp))
+                if self.transform_function is not None: 
+
+                    batched_decomp[plane].append(self.trained_transfrom[plane].transform(decomp))
+
+                else: 
+                    batched_decomp[plane].append(decomp)
 
             batched_decomp[plane] = np.concatenate(batched_decomp[plane])
 
         return batched_decomp
+        
 
+class BatchedClustering: 
+    def __init__(self, n_clusters, batch_size=200) -> None:
+        self.n_clusters = n_clusters 
+        self.batch_size = batch_size
+
+    def fit(self, decomposition): 
+        kmeans = MiniBatchKMeans(n_clusters=self.n_clusters, random_state=0, batch_size=self.batch_size, n_init="auto")
+        n_batches = int(len(decomposition)/self.batch_size)
+        decomp_batches = np.array_split(decomposition, n_batches, axis=0)
+        for batch in tqdm(decomp_batches, desc=f'Training KMeans...'):
+            kmeans = kmeans.partial_fit(batch)
+        self.kmeans = kmeans
+
+    def transform(self, decomposition): 
+        labels = []
+
+        n_batches = int(len(decomposition)/self.batch_size)
+        decomp_batches = np.array_split(decomposition, n_batches, axis=0)
+        for batch in decomp_batches:
+            batch_labels = self.kmeans.predict(batch)
+            labels.append(batch_labels)
+
+        return np.concatenate(labels)
+
+    def fit_transform(self, decomposition): 
+        self.fit(decomposition)
+        return self.transform(decomposition)
 
 class LatentRepresentation:
     def __init__(
@@ -96,15 +132,17 @@ class LatentRepresentation:
         data_loader,
         out_path,
         batched_fit: bool = True,
+        batched_cluster: bool = True, 
         name="plot",
         title="",
         n_visual_dim=2,
         n_clusters=5,
         clustering_components: int = 2,
         true_labels=None,
-        decomposition_algorithm="isomap",
-        clustering_algorithm="kmeans",
+        decomposition_algorithm="kmeans",
+        clustering_algorithm="batched_kmeans",
         planes: Sequence = ("u", "v", "y"),
+        n_threshold:int = None
     ) -> None:
         self.true_labels = true_labels
         self.embedding_function = embedding_function
@@ -118,6 +156,7 @@ class LatentRepresentation:
         self.decomposition_algorithm = decomposition_algorithm
         self.clustering_algorithm = clustering_algorithm
         self.batched_fit = batched_fit
+        self.batched_cluster = batched_cluster
 
         self.decomposition = None
         self.clustering_labels = None
@@ -127,30 +166,40 @@ class LatentRepresentation:
         self.plot_name = name
         self.title = title
 
+        self.threshold = 0.02 if n_threshold is None else n_threshold
+
     def decompose(self, clustering_decomp: bool = True):
         if clustering_decomp:
             n_components = self.n_clustering_components
         else:
             n_components = self.n_components
-        try:
-            decomp = {
-                "isomap": Isomap(n_components=n_components, n_neighbors=self.n_clusters),
-                "pca": PCA(n_components=n_components),
-                "t_sne": TSNE(n_components=n_components),
-            }[self.decomposition_algorithm]
 
-        except KeyError:
-            raise NotImplementedError(
-                f"Algorithm {self.decomposition_algorithm} not included."
-            )
+        if self.batched_cluster: 
+            decomp = None 
+            max_features = n_components
+
+        else: 
+            try:
+                decomp = {
+                    "isomap": Isomap(n_components=n_components, n_neighbors=self.n_clusters),
+                    "pca": PCA(n_components=n_components),
+                    "t_sne": TSNE(n_components=n_components),
+                }[self.decomposition_algorithm]
+
+            except KeyError:
+                raise NotImplementedError(
+                    f"Algorithm {self.decomposition_algorithm} not included."
+                )
+            max_features = 30 
 
         fit = BatchedFit(
             self.data_loader,
             decomp,
-            max_features=30,
+            max_features=max_features,
             planes=self.planes,
             embedding_function=self.embedding_function,
         )
+
         fit.fit()
         decomposition = fit.transform()
         return decomposition
@@ -158,8 +207,9 @@ class LatentRepresentation:
     def cluster(self):
         try:
             clustering_algo = {
-                "kmeans": KMeans(n_clusters=self.n_clusters).fit_transform,
-                "dbscan": DBSCAN().fit_predict,
+                "kmeans": KMeans(n_clusters=self.n_clusters),
+                "batched_kmeans": BatchedClustering(n_clusters=self.n_clusters),
+                "dbscan": DBSCAN(),
             }[self.clustering_algorithm]
         except KeyError:
             raise NotImplementedError("Clustering algorithm not implemented")
@@ -167,19 +217,36 @@ class LatentRepresentation:
         if self.decomposition is None:
             self.decomposition = self.decompose(clustering_decomp=True)
 
-        self.clustering_labels = {
-            plane: np.argmax(clustering_algo(self.decomposition[plane]), axis=-1)
-            for plane in self.planes
-        }
-        self.clustering_score = self.score()
+        if not isinstance(self.threshold, int): 
+            self.threshold = int(len(self.decomposition[self.planes[0]]) * self.threshold)
 
-    def score(self):
-        return {
-            plane: silhouette_samples(
-                self.decomposition[plane], self.clustering_labels[plane]
+        self.clustering_labels = {}
+        self.clustering_score = {}
+        results = {}
+        for plane in self.planes: 
+
+            clustering_algo.fit(self.decomposition[plane])
+
+            sample_index = np.random.default_rng().integers(low=0, high=len(self.decomposition[plane]), size=self.threshold)
+            samples = self.decomposition[plane][sample_index]
+            labels = clustering_algo.transform(samples)
+
+            print(f"Computing Silhouette for {len(labels)} samples.....")
+            self.clustering_labels[plane] = labels
+            self.clustering_score[plane] = silhouette_samples(
+                samples, labels
             )
-            for plane in self.planes
+            self.decomposition[plane] = samples
+            self.true_labels[plane] = self.true_labels[plane][sample_index]
+
+        results = {
+            "labels": self.true_labels, 
+            "cluster_labels": self.clustering_labels, 
+            "cluster_score": self.clustering_score, 
+            "decomposition": self.decomposition
         }
+        with open(f"{self.out_path.strip('/')}/{self.plot_name}_decomposition.json", "w") as f: 
+            json.dump(results, f )
 
     def visualize(self):
         if self.n_components != 2:
@@ -276,7 +343,7 @@ class LatentRepresentation:
             self.title += ":"
 
         figure.suptitle(
-            f"{self.title} Clustering using {self.clustering_algorithm} and {self.decomposition_algorithm} Decomposition"
+            f"{self.title}"
         )
         if n_columns == 3:
             subplots[-1, 2].set_xlabel("True Labels")

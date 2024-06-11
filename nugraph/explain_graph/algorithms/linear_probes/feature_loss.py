@@ -9,7 +9,7 @@ class FeatureLoss:
         else: 
             self.device = device
 
-        included_features = {
+        self.included_features = {
             "tracks": self._tracks, 
             "hipmip": self._hipmip,
             "node_slope": self._node_slope, 
@@ -17,9 +17,9 @@ class FeatureLoss:
         }
 
         for index, feat in enumerate(['wire', 'peak', 'integral', 'rms']): 
-            included_features[feat] = lambda y_hat, y: self._node_feature(y_hat, y, index)
+            self.included_features[feat] = lambda y_hat, y: self._node_feature(y_hat, y, index)
 
-        self.func = included_features[feature]
+        self.func = self.included_features[feature]
 
     def loss(self, y_hat, y):
         loss = 0
