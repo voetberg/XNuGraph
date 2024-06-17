@@ -1,11 +1,11 @@
 import torch
 import numpy as np
-import matplotlib.pyplot as plt
 import os
 
 import json
 from tqdm import tqdm
 from torch_geometric.loader import DataLoader
+from pathlib import Path
 
 from nugraph.explain_graph.algorithms.linear_probes.linear_decoder import (
     DynamicLinearDecoder,
@@ -19,7 +19,7 @@ from nugraph.explain_graph.algorithms.linear_probes.feature_loss import FeatureL
 
 
 from torch.utils.data.distributed import DistributedSampler
-from torch.distributed import init_process_group, destroy_process_group
+from torch.distributed import init_process_group, destroy_process_group, barrier
 
 
 def group_setup(device, total_devices):
@@ -44,24 +44,28 @@ class DynamicProbedNetwork:
         make_latent_rep=False,
         make_embedding_rep=True,
         feature_loss=["tracks", "hipmip"],
-        class_feature=bool, 
         network_target=["encoder", "message", "decoder"],
         inference=False,
-        multicore=True
+        multicore=True, 
+        test=False, 
     ) -> None:
         
+        torch.set_float32_matmul_precision('high')
+
+        batch_size = 64 if not test else 2
         if multicore: 
             group_setup(rank, total_devices)
-            self.data = DataLoader(data, batch_size=64, shuffle=False, sampler=DistributedSampler(data))
+            self.data = DataLoader(data, batch_size=batch_size, shuffle=False, sampler=DistributedSampler(data))
         
         else: 
-            self.data = DataLoader(data, batch_size=64, shuffle=True)
+            self.data = DataLoader(data, batch_size=batch_size, shuffle=True)
 
 
         self.device = rank
         self.model = model.to(rank)
         self.model.train(False)
         self.model.freeze()
+        self.test = test 
 
         self.planes = planes
         self.semantic_classes = semantic_classes
@@ -79,16 +83,16 @@ class DynamicProbedNetwork:
 
         self.training_history = {}
 
-        n_out_features = len(self.semantic_classes) if class_feature else 1
-        self.probe = self.make_probe(n_out_features)
-
+        self.probe = self.make_probe(1)
         self.probe_name = f"{self.feature_loss}_{self.network_target}_m{self.message_passing_steps}"
-
-        if inference: 
-            self.load_probe()
 
         if not os.path.exists(os.path.dirname(self.out_path)):
             os.makedirs(self.out_path)
+
+        if inference: 
+            self.load_probe()
+            trainer = TrainSingleProbe(probe=self.probe, device=self.device)
+            trainer.inference(self.data, probe_name=self.probe_name, outdir=self.out_path)
 
     def encoder_in_func(self, x):
         x, _, _, _, _ = self.model.unpack_batch(x)
@@ -174,41 +178,15 @@ class DynamicProbedNetwork:
             destroy_process_group()
 
 
-    def forward_probe(self): 
-        losses = FeatureLoss(features="tracks").included_features.keys()
-        active_loss = {loss: [] for loss in losses}
-
-        for batch in tqdm(self.data):
-            m = self.probe.input_function(batch)
-            prediction = self.probe.forward(m)
-
-            for loss in losses: 
-                active_loss[loss].append(FeatureLoss(loss, device=self.device).loss(prediction, batch))
-
-        output = {self.probe_name: {
-            loss_name: np.mean(np.array(loss_value))
-            for loss_name, loss_value 
-            in active_loss.items()
-        }}
-
-        with open(f"{self.out_path}/inference.json", "r+w") as f:
-            try: 
-                existing = json.load(f)
-            except FileNotFoundError: 
-                existing = {}
-
-            new = existing.update(output)
-            json.dump(new, f)
-
     def train(self):
         self.network_clustering()
 
         if not os.path.exists(f"{self.out_path}/{self.probe_name}_probe_history.json"):
-            trainer = TrainSingleProbe(probe=self.probe, epochs=self.epochs, device=self.device)
+            trainer = TrainSingleProbe(probe=self.probe, epochs=self.epochs, device=self.device, test=self.test)
             loss = trainer.train_probe(self.data)
             self.training_history = loss
             self.save_progress()
-            self.forward_probe()
+            trainer.inference(self.data, probe_name=self.probe_name, outdir=self.out_path)
         else: 
             print(f"{self.probe_name} already has results, skipping...")
         
@@ -266,14 +244,16 @@ class TrainSingleProbe:
         probe: DynamicLinearDecoder,
         planes: list = ["v", "u", "y"],
         epochs: int = 25,
-        device=None
+        device=None, 
+        test = False, 
     ) -> None:
         self.probe = probe
         self.planes = planes
         self.epochs = epochs
         self.optimizer = torch.optim.Adam(params=self.probe.parameters(), lr=0.01)
         self.device = device 
-        
+        self.test = test 
+
     def train_step(self, batch):
         m = self.probe.input_function(batch)
 
@@ -288,10 +268,11 @@ class TrainSingleProbe:
             data.sampler.set_epoch(epoch)
             epoch_loss = 0
 
+
             for batch in data:
                 loss = self.train_step(batch)
                 epoch_loss += loss
-
+            
             epoch_loss.backward()
             self.optimizer.step()
             loss = epoch_loss.item()/len(data)
@@ -300,13 +281,35 @@ class TrainSingleProbe:
 
         return training_history
 
-def visualize_all_probes(results_dir): 
-    # Get all the inferences and start a plottin'
-    
-    inference = json.load(open(f"{results_dir.rstrip('/')}/inference.json", 'r'))
-    losses = FeatureLoss(features="tracks").included_features.keys()
 
-    figure, subplots = plt.subplots(len(losses), len(losses))
-    probe_names = inference.keys()
-    for loss in losses: 
-        ""
+    def inference(self, data, outdir, probe_name): 
+        losses = FeatureLoss("tracks").included_features.keys()
+        active_loss = {loss: [] for loss in losses}
+
+        for batch in tqdm(data, desc="Computing Feature Loss..."):
+            m = self.probe.input_function(batch)
+            prediction = self.probe.forward(m)
+
+            for loss in losses: 
+                active_loss[loss].append(FeatureLoss(loss, device=self.device).loss(prediction, batch).detach().cpu())
+
+        output = {probe_name: {
+            loss_name: np.mean(np.array(loss_value)).astype(float)
+            for loss_name, loss_value 
+            in active_loss.items()
+        }}
+
+        inference = f"{outdir}/inference.json"
+        try: 
+            Path(inference).touch(exist_ok=False)
+        except FileExistsError: 
+            pass
+
+        with open(inference, "w+") as f:
+            try: 
+                existing = json.load(f)
+            except json.decoder.JSONDecodeError: 
+                existing = {}
+
+            existing[probe_name] = output
+            json.dump(existing, f)

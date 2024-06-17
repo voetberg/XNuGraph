@@ -27,30 +27,20 @@ class FeatureLoss:
             loss += self.func(y_hat[p], y[p])
         return loss/len(self.planes)
 
-    def _tracks(self, x, label):
+    def _tracks(self, y_hat, label):
         """
         Binary classification for if a hit is part of a track (hip/mip) or not
         """
         binary = torch.tensor([0, 1], device=self.device)
-        x_binary_mask = torch.isin(
-            torch.argmax(torch.nn.functional.softmax(x, dim=-1), dim=-1), binary
-        ).long()
-        x_binary_mask = (
-            torch.stack([x_binary_mask for _ in range(x.shape[-1])])
-            .swapaxes(0, -1)
-            .swapaxes(0, 1)
-        )
-        label_binary_mask = torch.isin(label["y_semantic"], binary).long()
+        label_binary_mask = torch.isin(label["y_semantic"], binary).float()
 
-        x_binary = x * x_binary_mask
         label_binary = label["y_semantic"] * label_binary_mask
+        y_hat = y_hat.squeeze().type(torch.float) * label_binary_mask
 
-        if len(x_binary.shape) == 3:
-            x_binary = x_binary[:, :, 0]
-        loss = torch.nn.CrossEntropyLoss()(x_binary, label_binary)
+        loss = torch.nn.CrossEntropyLoss()(y_hat, label_binary)
         return loss
 
-    def _hipmip(self, x, label):
+    def _hipmip(self, y_hat, label):
         """
         Verifies the model can tell the difference between two different track type hits
         Constructs a binary mask of hip or mip, and then tells the difference between the two
@@ -60,67 +50,62 @@ class FeatureLoss:
             torch.isin(label["y_semantic"], torch.tensor([0, 1], device=self.device)),
             other=torch.tensor([torch.nan], device=self.device),
         )  # Pick if in either track class
-        if len(x.shape) == 3:
-            x = x[:, :, 0]
-        else:
-            x = x.expand(-1, 5)  # Cheating :0
-        y_hat = x * torch.stack([track_filter for _ in range(x.size(1))]).mT
+
+        y_hat = y_hat.squeeze().type(torch.float) * track_filter
         y = label["y_semantic"] * track_filter
-        y = y.type(torch.LongTensor).to(torch.device(self.device))
-        try:
-            loss = torch.nn.CrossEntropyLoss()(y_hat, y)
-        except IndexError:
-            print(y_hat, y)
+        y = y.type(torch.float).to(torch.device(self.device))
+
+        loss = torch.nn.CrossEntropyLoss()(y_hat, y)
+
         return loss
 
-    def _node_slope(self, x, label): 
+    def _node_slope(self, y_hat, label): 
         """
         Predict the node slope and compare it to the truth
         """
-        y = FeatureGeneration().node_slope(label)
-        y_hat = x
+
+        positions = label["pos"]
+        m = torch.tensor(positions[:, 1] / positions[:, 0])
+        y = m.unsqueeze(-1)
         return torch.nn.MSELoss()(y_hat, y)
 
-    def _node_feature(self, x, label, feature_index): 
+    def _node_feature(self, y_hat, label, feature_index): 
         """
         X is a prediction of a node feature 
         """
-        y = label.collect('x')[:, feature_index]
-        y_hat = x
-        return torch.nn.MSELoss(y_hat, y)
+        y = label['x'][:, feature_index]
+        return torch.nn.MSELoss()(y_hat.squeeze().float(), y.float())
 
-    def _michel_required(self, x, label): 
+    def _michel_required(self, y_hat, label): 
         """
         If there is a michel, there must be a mip track 
 
         """
-
         michel_index = 3 
         mip_index = 0
 
         def michel_ratio(labels): 
             n_michel = labels * torch.where(
-                torch.tensor([1], device=self.device),
-                torch.isin(labels, torch.tensor([michel_index], device=self.device)),
-                other=torch.tensor([0], device=self.device))
+                torch.isin(labels, torch.tensor([michel_index], device=self.device)).bool(),
+                 torch.tensor([1], device=self.device).float(),
+                other=torch.tensor([0], device=self.device).float())
             n_michel = torch.sum(n_michel)
 
             n_mip = labels * torch.where(
-                torch.tensor([1], device=self.device),
-                torch.isin(labels, torch.tensor([mip_index], device=self.device)),
-                other=torch.tensor([0], device=self.device))
+                torch.isin(labels, torch.tensor([mip_index], device=self.device)).bool(),
+                torch.tensor([1], device=self.device).float(),
+                other=torch.tensor([0], device=self.device).float())
             n_mip = torch.sum(n_mip)
             try: 
                 n_mip = 1/n_mip 
-            except DivisionByZeroError: 
+            except ZeroDivisionError: 
                 n_mip = torch.NaN 
 
             return 1/(n_michel - n_mip)
 
-        y_hat = torch.argmax(torch.nn.functional.softmax(x, dim=-1), dim=-1)
-        y_hat_loss = michel_ratio(y_hat)
-
-        return y_hat_loss
+        true_michel_ratio = michel_ratio(label['y_semantic']).float()
+        y = torch.concat([torch.tensor([true_michel_ratio]) for _ in range(y_hat.shape[0])]).to(self.device)
+        return torch.nn.MSELoss()(y_hat.squeeze().float(), y)
 
     def _michel_energy(self, x, label):
         """
