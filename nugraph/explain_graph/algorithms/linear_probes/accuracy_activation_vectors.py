@@ -66,7 +66,7 @@ class AccuracyActivationVectors(DynamicProbedNetwork):
 
     def train_encoder(self, epochs, overwrite):
         encoder_probe = self.make_probe(
-            input_features=(self.model.planar_features),
+            input_features=(self.model.planar_features,),
             embedding_function=self.encoder_in_func,
             n_out_features=len(self.semantic_classes),
             loss_function=self.accuracy_loss,
