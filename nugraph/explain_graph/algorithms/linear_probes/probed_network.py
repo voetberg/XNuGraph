@@ -122,6 +122,12 @@ class DynamicProbedNetwork:
         )
         self.probe.eval()
 
+    def destroy_gpu_group(self):
+        try:
+            destroy_process_group()  # Not doing multicore, there is no pg to destroy
+        except AssertionError:
+            pass
+
     def train(
         self,
         probe: type[DynamicLinearDecoder],
@@ -133,19 +139,16 @@ class DynamicProbedNetwork:
             and not overwrite
         ):
             print(f"{self.probe_name} already has results, skipping...")
+            self.destroy_gpu_group()
         else:
             trainer = TrainSingleProbe(
                 probe=probe, epochs=epochs, device=self.device, test=self.test
             )
-            loss = trainer.train_probe(self.data)
+            loss, metrics = trainer.train_probe(self.data)
             inference = trainer.inference(self.data)
             self.save_progress(loss, inference)
-
-            return loss, inference
-        try:
-            destroy_process_group()  # Not doing multicore, there is no pg to destroy
-        except AssertionError:
-            pass
+            self.destroy_gpu_group
+            return loss, metrics, inference
 
     def save_progress(self, training_history, inference):
         with open(
@@ -198,10 +201,13 @@ class TrainSingleProbe:
 
     def train_probe(self, data):
         training_history = []
+        metric_history = []
+
         self.probe.train(True)
         for epoch in (pbar := tqdm(range(self.epochs))):
             if hasattr(data.sampler, "set_epoch"):
                 data.sampler.set_epoch(epoch)
+
             epoch_loss = 0
             metrics = []
             for batch in data:
@@ -216,9 +222,10 @@ class TrainSingleProbe:
             self.optimizer.step()
             loss = epoch_loss.item() / len(data)
             training_history.append(loss)
+            metric_history.append(metrics)
             pbar.set_description(f"Loss: {round(loss, 5)}")
 
-        return training_history
+        return training_history, metric_history
 
     def inference(self, data):
         losses = FeatureLoss("tracks").included_features.keys()

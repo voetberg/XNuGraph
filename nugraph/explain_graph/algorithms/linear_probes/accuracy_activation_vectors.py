@@ -55,10 +55,10 @@ class AccuracyActivationVectors(DynamicProbedNetwork):
         labels = y.collect("y_semantic")
         loss = 0
         for p in self.planes:
-            true_class = torch.tensor(labels[p] == class_index).to(int)
+            true_class = torch.tensor(labels[p] == class_index).type(torch.float)
             prediction_class = torch.tensor(
                 torch.argmax(y_hat[p], axis=1) == class_index
-            ).to(int)
+            ).type(torch.float)
             loss += torch.nn.functional.cross_entropy(prediction_class, true_class)
         return loss / len(self.planes)
 
@@ -73,10 +73,9 @@ class AccuracyActivationVectors(DynamicProbedNetwork):
                 for i in range(len(self.semantic_classes))
             ],
         )
-        history, inference = self.train(
+        history, class_losses, inference = self.train(
             encoder_probe, epochs=epochs, overwrite=overwrite
         )
-        class_losses = self.ind_class_loss(encoder_probe)
         return history, inference, class_losses
 
     def train_message(self, message_step, epochs, overwrite):
@@ -90,10 +89,9 @@ class AccuracyActivationVectors(DynamicProbedNetwork):
                 for i in range(len(self.semantic_classes))
             ],
         )
-        history, inference = self.train(
+        history, class_losses, inference = self.train(
             message_probe, epochs=epochs, overwrite=overwrite
         )
-        class_losses = self.ind_class_loss(message_probe)
         return history, inference, class_losses
 
     def visualize(
