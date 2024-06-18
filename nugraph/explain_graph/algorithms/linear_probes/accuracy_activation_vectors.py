@@ -47,7 +47,7 @@ class AccuracyActivationVectors(DynamicProbedNetwork):
         loss_func = RecallLoss(ignore_index=-1, num_classes=len(self.semantic_classes))
         labels = y.collect("y_semantic")
         for p in self.planes:
-            loss += loss_func(y_hat[p].to(torch.float), labels[p].to(torch.float))
+            loss += loss_func(y_hat[p].type(torch.float), labels[p].type(torch.float))
 
         return loss / len(self.planes)
 
