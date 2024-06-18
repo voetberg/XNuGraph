@@ -5,7 +5,6 @@ Evaluate the ability for a network section to learn a the target of the network
 from nugraph.explain_graph.algorithms.linear_probes.probed_network import (
     DynamicProbedNetwork,
 )
-from nugraph.util.RecallLoss import RecallLoss
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -44,13 +43,11 @@ class AccuracyActivationVectors(DynamicProbedNetwork):
 
     def accuracy_loss(self, y_hat, y):
         loss = 0
-        loss_func = RecallLoss(ignore_index=-1, num_classes=len(self.semantic_classes))
         labels = y.collect("y_semantic")
         for p in self.planes:
-            loss += loss_func(
-                torch.argmax(y_hat[p], dim=1).type(torch.float),
-                labels[p].type(torch.float),
-            )
+            y_hat_plane = torch.argmax(y_hat[p], dim=1).type(torch.float)
+            y = labels[p].type(torch.float)
+            loss += torch.nn.functional.cross_entropy(y_hat_plane, y, ignore_index=-1)
 
         return loss / len(self.planes)
 
@@ -62,7 +59,9 @@ class AccuracyActivationVectors(DynamicProbedNetwork):
             prediction_class = torch.tensor(
                 torch.argmax(y_hat[p], axis=1) == class_index
             ).type(torch.float)
-            loss += torch.nn.functional.cross_entropy(prediction_class, true_class)
+            loss += torch.nn.functional.binary_cross_entropy(
+                prediction_class, true_class
+            )
         return loss / len(self.planes)
 
     def train_encoder(self, epochs, overwrite):
