@@ -47,7 +47,10 @@ class AccuracyActivationVectors(DynamicProbedNetwork):
         loss_func = RecallLoss(ignore_index=-1, num_classes=len(self.semantic_classes))
         labels = y.collect("y_semantic")
         for p in self.planes:
-            loss += loss_func(y_hat[p].type(torch.long), labels[p].type(torch.long))
+            loss += loss_func(
+                torch.argmax(y_hat[p], dim=1).type(torch.float),
+                labels[p].type(torch.float),
+            )
 
         return loss / len(self.planes)
 
@@ -55,10 +58,10 @@ class AccuracyActivationVectors(DynamicProbedNetwork):
         labels = y.collect("y_semantic")
         loss = 0
         for p in self.planes:
-            true_class = torch.tensor(labels[p] == class_index).type(torch.long)
+            true_class = torch.tensor(labels[p] == class_index).type(torch.float)
             prediction_class = torch.tensor(
                 torch.argmax(y_hat[p], axis=1) == class_index
-            ).type(torch.long)
+            ).type(torch.float)
             loss += torch.nn.functional.cross_entropy(prediction_class, true_class)
         return loss / len(self.planes)
 
