@@ -44,10 +44,11 @@ class AccuracyActivationVectors(DynamicProbedNetwork):
     def accuracy_loss(self, y_hat, y):
         loss = 0
         labels = y.collect("y_semantic")
-        for p in self.lanes:
+        for p in self.planes:
             y_hat_plane = y_hat[p].type(torch.float)
             y = labels[p].type(torch.long)
             loss += torch.nn.functional.cross_entropy(y_hat_plane, y, ignore_index=-1)
+
         return loss / len(self.planes)
 
     def ind_class_loss(self, y_hat, y, class_index):
