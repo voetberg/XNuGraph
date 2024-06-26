@@ -80,7 +80,7 @@ class AccuracyActivationVectors(DynamicProbedNetwork):
             ],
         )
         history, class_losses = self.train(
-            encoder_probe, epochs=epochs, overwrite=overwrite, test=test
+            encoder_probe, epochs=epochs, overwrite=overwrite
         )
         return history, class_losses
 
@@ -100,9 +100,7 @@ class AccuracyActivationVectors(DynamicProbedNetwork):
         )
         return history, class_losses
 
-    def visualize(
-        self, loss, inference_results, class_loss, save=False, multiprobe=False
-    ):
+    def visualize(self, loss, class_loss, save=False, multiprobe=False):
         """
         Plot either the history for a single probe, or all of them stacked
         """

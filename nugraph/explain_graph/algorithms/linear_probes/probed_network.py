@@ -1,6 +1,7 @@
 from typing import Optional, Sequence
 import torch
 import os
+from datetime import datetime
 
 import json
 from tqdm import tqdm
@@ -129,7 +130,6 @@ class DynamicProbedNetwork:
         probe: type[DynamicLinearDecoder],
         overwrite: bool = False,
         epochs: int = 25,
-        test=False,
     ):
         if (
             os.path.exists(f"{self.out_path}/{self.probe_name}_probe_history.json")
@@ -137,11 +137,13 @@ class DynamicProbedNetwork:
         ):
             print(f"{self.probe_name} already has results, skipping...")
             self.destroy_gpu_group()
+
         else:
-            trainer = TrainSingleProbe(
-                probe=probe, epochs=epochs, device=self.device, test=self.test
-            )
-            loss, metrics = trainer.train_probe(self.data, test=test)
+            self.probe_name += str(
+                datetime.timestamp()
+            )  # Don't destroy the existing results. Just in case.
+            trainer = TrainSingleProbe(probe=probe, epochs=epochs, device=self.device)
+            loss, metrics = trainer.train_probe(self.data)
             self.save_progress(trainer.probe, loss)
             self.destroy_gpu_group()
             return loss, metrics
