@@ -67,7 +67,7 @@ class AccuracyActivationVectors(DynamicProbedNetwork):
             )
         return loss / len(self.planes)
 
-    def train_encoder(self, epochs, overwrite):
+    def train_encoder(self, epochs, overwrite, test=False):
         encoder_probe = self.make_probe(
             input_features=(self.model.planar_features,),
             embedding_function=self.encoder_in_func,
@@ -79,7 +79,7 @@ class AccuracyActivationVectors(DynamicProbedNetwork):
             ],
         )
         history, class_losses, inference = self.train(
-            encoder_probe, epochs=epochs, overwrite=overwrite
+            encoder_probe, epochs=epochs, overwrite=overwrite, test=test
         )
         return history, inference, class_losses
 

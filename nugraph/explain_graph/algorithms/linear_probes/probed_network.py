@@ -133,6 +133,7 @@ class DynamicProbedNetwork:
         probe: type[DynamicLinearDecoder],
         overwrite: bool = False,
         epochs: int = 25,
+        test=False,
     ):
         if (
             os.path.exists(f"{self.out_path}/{self.probe_name}_probe_history.json")
@@ -144,7 +145,7 @@ class DynamicProbedNetwork:
             trainer = TrainSingleProbe(
                 probe=probe, epochs=epochs, device=self.device, test=self.test
             )
-            loss, metrics = trainer.train_probe(self.data)
+            loss, metrics = trainer.train_probe(self.data, test=test)
             inference = trainer.inference(self.data)
             self.save_progress(loss, inference)
             self.destroy_gpu_group
@@ -199,7 +200,7 @@ class TrainSingleProbe:
                 metrics.append(metric(prediction, batch))
         return loss, metrics
 
-    def train_probe(self, data):
+    def train_probe(self, data, test=False):
         training_history = []
         metric_history = []
 
@@ -217,6 +218,8 @@ class TrainSingleProbe:
                 if metrics is not None:
                     for metric_index, metric in enumerate(metrics):
                         metrics[metric_index] += metric
+                if test:
+                    continue
 
             epoch_loss.backward()
             self.optimizer.step()
