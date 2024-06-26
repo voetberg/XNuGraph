@@ -142,11 +142,11 @@ class DynamicProbedNetwork:
                 probe=probe, epochs=epochs, device=self.device, test=self.test
             )
             loss, metrics = trainer.train_probe(self.data, test=test)
-            self.save_progress(loss)
+            self.save_progress(trainer.probe, loss)
             self.destroy_gpu_group()
             return loss, metrics
 
-    def save_progress(self, training_history):
+    def save_progress(self, probe, training_history):
         with open(
             f"{self.out_path}/{self.probe_name}_probe_history.json",
             "w",
@@ -154,7 +154,7 @@ class DynamicProbedNetwork:
             json.dump(training_history, f)
 
         torch.save(
-            self.probe.state_dict(),
+            probe.state_dict(),
             f"{self.out_path}/{self.probe_name}_probe_weights.pt",
         )
 
