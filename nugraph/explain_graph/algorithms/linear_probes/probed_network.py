@@ -71,12 +71,12 @@ class DynamicProbedNetwork:
         x = {plane: x[plane][:, : self.model.in_features] for plane in self.planes}
         return self.model.encoder(x)
 
-    def message_in_function(self, batch):
+    def message_in_function(self, batch, message_passing_steps):
         x, edge_index_plane, edge_index_nexus, nexus, _ = self.model.unpack_batch(batch)
         x = {plane: x[plane][:, : self.model.in_features] for plane in self.planes}
         m = self.model.encoder(x)
 
-        for _ in range(self.message_passing_steps):
+        for _ in range(message_passing_steps):
             # shortcut connect features
             for p in self.planes:
                 s = x[p].detach().unsqueeze(1).expand(-1, m[p].size(1), -1)
