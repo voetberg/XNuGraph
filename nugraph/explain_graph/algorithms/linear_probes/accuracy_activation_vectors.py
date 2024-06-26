@@ -66,7 +66,7 @@ class AccuracyActivationVectors(DynamicProbedNetwork):
             loss += torch.nn.functional.binary_cross_entropy(
                 prediction_class, true_class
             )
-        return loss / len(self.planes)
+        return loss.item() / len(self.planes)
 
     def train_encoder(self, epochs, overwrite, test=False):
         encoder_probe = self.make_probe(
