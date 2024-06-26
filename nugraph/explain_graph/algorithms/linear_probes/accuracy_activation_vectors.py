@@ -86,7 +86,7 @@ class AccuracyActivationVectors(DynamicProbedNetwork):
 
     def train_message(self, message_step, epochs, overwrite):
         message_probe = self.make_probe(
-            input_features=self.model.planar_features,
+            input_features=(self.model.planar_features,),
             embedding_function=lambda x: self.message_in_function(x, message_step),
             n_out_features=len(self.semantic_classes),
             loss_function=self.accuracy_loss,
