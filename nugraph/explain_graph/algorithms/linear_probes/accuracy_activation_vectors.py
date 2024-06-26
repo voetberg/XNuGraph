@@ -95,10 +95,10 @@ class AccuracyActivationVectors(DynamicProbedNetwork):
                 for i in range(len(self.semantic_classes))
             ],
         )
-        history, class_losses, inference = self.train(
+        history, class_losses = self.train(
             message_probe, epochs=epochs, overwrite=overwrite
         )
-        return history, inference, class_losses
+        return history, class_losses
 
     def visualize(
         self, loss, inference_results, class_loss, save=False, multiprobe=False
