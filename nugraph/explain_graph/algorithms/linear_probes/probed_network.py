@@ -140,7 +140,7 @@ class DynamicProbedNetwork:
 
         else:
             self.probe_name += str(
-                datetime.timestamp()
+                datetime.timestamp(datetime.now())
             )  # Don't destroy the existing results. Just in case.
             trainer = TrainSingleProbe(probe=probe, epochs=epochs, device=self.device)
             loss, metrics = trainer.train_probe(self.data)
