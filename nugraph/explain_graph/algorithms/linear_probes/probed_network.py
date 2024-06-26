@@ -1,6 +1,5 @@
 from typing import Optional, Sequence
 import torch
-import numpy as np
 import os
 
 import json
@@ -10,9 +9,6 @@ from torch_geometric.loader import DataLoader
 from nugraph.explain_graph.algorithms.linear_probes.linear_decoder import (
     DynamicLinearDecoder,
 )
-
-from nugraph.explain_graph.algorithms.linear_probes.feature_loss import FeatureLoss
-
 
 from torch.utils.data.distributed import DistributedSampler
 from torch.distributed import init_process_group, destroy_process_group
@@ -146,26 +142,16 @@ class DynamicProbedNetwork:
                 probe=probe, epochs=epochs, device=self.device, test=self.test
             )
             loss, metrics = trainer.train_probe(self.data, test=test)
-            inference = trainer.inference(self.data)
-            self.save_progress(loss, inference)
-            self.destroy_gpu_group
-            return loss, metrics, inference
+            self.save_progress(loss)
+            self.destroy_gpu_group()
+            return loss, metrics
 
-    def save_progress(self, training_history, inference):
+    def save_progress(self, training_history):
         with open(
             f"{self.out_path}/{self.probe_name}_probe_history.json",
             "w",
         ) as f:
             json.dump(training_history, f)
-
-        with open(f"{self.out_path}/inference.json", "w+") as f:
-            try:
-                existing = json.load(f)
-            except json.decoder.JSONDecodeError:
-                existing = {}
-
-            existing[self.probe_name] = inference
-            json.dump(existing, f)
 
         torch.save(
             self.probe.state_dict(),
@@ -229,25 +215,3 @@ class TrainSingleProbe:
             pbar.set_description(f"Loss: {round(loss, 5)}")
 
         return training_history, metric_history
-
-    def inference(self, data):
-        losses = FeatureLoss("tracks").included_features.keys()
-        active_loss = {loss: [] for loss in losses}
-
-        for batch in tqdm(data, desc="Computing Feature Loss..."):
-            m = self.probe.input_function(batch)
-            prediction = self.probe.forward(m)
-
-            for loss in losses:
-                active_loss[loss].append(
-                    FeatureLoss(loss, device=self.device)
-                    .loss(prediction, batch)
-                    .detach()
-                    .cpu()
-                )
-
-        output = {
-            loss_name: np.mean(np.array(loss_value)).astype(float)
-            for loss_name, loss_value in active_loss.items()
-        }
-        return output
