@@ -196,7 +196,7 @@ class TrainSingleProbe:
         if hasattr(self.probe, "metrics"):
             metrics = []
             for metric in self.probe.metrics:
-                metrics.append(metric(prediction, batch))
+                metrics.append(metric(prediction, batch).item())
         return loss, metrics
 
     def train_probe(self, data, test=False):
@@ -216,7 +216,7 @@ class TrainSingleProbe:
 
                 if metrics is not None:
                     for metric_index, metric in enumerate(metrics):
-                        metrics[metric_index] += metric.item()
+                        metrics[metric_index] += metric
                 if test:
                     continue
 
