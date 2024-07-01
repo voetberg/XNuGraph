@@ -71,9 +71,10 @@ class ConceptActivateVectors(DynamicProbedNetwork):
         return history, class_losses
 
     def train_message(self, message_step, epochs, overwrite):
-        embedding_function = (lambda x: self.message_in_function(x, message_step),)
         history, class_losses = self.train(
-            embedding_function=embedding_function, epochs=epochs, overwrite=overwrite
+            embedding_function=lambda x: self.message_in_function(x, message_step),
+            epochs=epochs,
+            overwrite=overwrite,
         )
         return history, class_losses
 
