@@ -67,7 +67,6 @@ class ConceptActivateVectors(DynamicProbedNetwork):
             embedding_function=self.encoder_in_func,
             epochs=epochs,
             overwrite=overwrite,
-            test=test,
         )
         return history, class_losses
 
