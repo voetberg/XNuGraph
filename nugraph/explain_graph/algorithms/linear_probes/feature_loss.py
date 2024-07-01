@@ -100,36 +100,13 @@ class FeatureLoss:
         michel_index = 3
         mip_index = 0
 
-        def michel_ratio(labels):
-            n_michel = labels * torch.where(
-                torch.isin(
-                    labels, torch.tensor([michel_index], device=self.device)
-                ).bool(),
-                torch.tensor([1], device=self.device).float(),
-                other=torch.tensor([0], device=self.device).float(),
-            )
-            n_michel = torch.sum(n_michel)
+        include_indices = torch.isin(
+            label, torch.tensor([michel_index, mip_index], device=self.device)
+        )
+        y = label[include_indices]
+        y_hat = y_hat[include_indices]
 
-            n_mip = labels * torch.where(
-                torch.isin(
-                    labels, torch.tensor([mip_index], device=self.device)
-                ).bool(),
-                torch.tensor([1], device=self.device).float(),
-                other=torch.tensor([0], device=self.device).float(),
-            )
-            n_mip = torch.sum(n_mip)
-            try:
-                n_mip = 1 / n_mip
-            except ZeroDivisionError:
-                n_mip = torch.NaN
-
-            return 1 / (n_michel - n_mip)
-
-        true_michel_ratio = michel_ratio(label["y_semantic"]).float()
-        y = torch.concat(
-            [torch.tensor([true_michel_ratio]) for _ in range(y_hat.shape[0])]
-        ).to(self.device)
-        return torch.nn.MSELoss()(y_hat.squeeze().float(), y)
+        return torch.nn.CrossEntropyLoss()(y_hat, y)
 
     def _michel_energy(self, x, label):
         """
