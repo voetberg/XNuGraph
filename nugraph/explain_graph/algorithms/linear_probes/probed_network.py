@@ -139,16 +139,20 @@ class DynamicProbedNetwork:
             self.destroy_gpu_group()
 
         else:
-            self.probe_name += str(
-                datetime.timestamp(datetime.now())
-            )  # Don't destroy the existing results. Just in case.
+            if os.path.exists(
+                (f"{self.out_path}/{self.probe_name}_probe_history.json")
+            ):
+                self.probe_name = (
+                    f"{self.probe_name}_{datetime.timestamp(datetime.now())}"
+                )
+
             trainer = TrainSingleProbe(probe=probe, epochs=epochs, device=self.device)
             loss, metrics = trainer.train_probe(self.data)
-            self.save_progress(trainer.probe, loss)
+            self.save_progress(trainer.probe, loss, metrics)
             self.destroy_gpu_group()
             return loss, metrics
 
-    def save_progress(self, probe, training_history):
+    def save_progress(self, probe, training_history, metric_history=None):
         with open(
             f"{self.out_path}/{self.probe_name}_probe_history.json",
             "w",
@@ -159,6 +163,13 @@ class DynamicProbedNetwork:
             probe.state_dict(),
             f"{self.out_path}/{self.probe_name}_probe_weights.pt",
         )
+
+        if metric_history is not None:
+            with open(
+                f"{self.out_path}/{self.probe_name}_probe_metric_history.json",
+                "w",
+            ) as f:
+                json.dump(metric_history, f)
 
 
 class TrainSingleProbe:
@@ -205,7 +216,7 @@ class TrainSingleProbe:
 
                 if metrics is not None:
                     for metric_index, metric in enumerate(metrics):
-                        metrics[metric_index] += metric
+                        metrics[metric_index] += metric.item()
                 if test:
                     continue
 
