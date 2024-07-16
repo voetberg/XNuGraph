@@ -157,7 +157,7 @@ class FeatureLoss:
 
 
 class MichelDistribution:
-    def __init__(self, distribution: str = "landau", device="cpu") -> None:
+    def __init__(self, distribution: str = "landau", device=None) -> None:
         path = os.path.dirname(__file__)
         distribution_paths = f"{path}/michel_energy_distribution.npz"
         data = np.load(distribution_paths)
