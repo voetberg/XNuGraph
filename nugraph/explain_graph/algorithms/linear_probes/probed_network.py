@@ -176,7 +176,7 @@ class DynamicProbedNetwork:
 
     def make_baseline(self, loss_function, batch_limit):
         mean_loss = 0
-        for index, batch in enumerate(tqdm.tqdm(self.data)):
+        for index, batch in enumerate(tqdm(self.data)):
             if index < batch_limit:
                 prediction = self.decoder_in_func(batch)
                 loss = loss_function(prediction, batch)
