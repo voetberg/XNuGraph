@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import os
 
 
 class FeatureLoss:
@@ -187,7 +188,8 @@ class FeatureLoss:
 
 class MichelDistribution:
     def __init__(self, distribution: str = "landau") -> None:
-        distribution_paths = "nugraph/explain_graph/algorithms/linear_probes/michel_energy_distribution.npz"
+        path = os.path.dirname(__file__)
+        distribution_paths = f"{path}/michel_energy_distribution.npz"
         data = np.load(distribution_paths)
         if distribution == "landau":
             self.pdf = data["landau_pdf"]
