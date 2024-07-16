@@ -116,7 +116,7 @@ class FeatureLoss:
         else:
             return base_loss
 
-    def _michel_energy(self, x, label):
+    def _michel_energy(self, y_hat, label):
         """
         Michel is within a known mass - so there is a low energy range in which it can be
         Just look at all the hit integral of specifically michel
@@ -124,66 +124,37 @@ class FeatureLoss:
 
         Uses the histogram binning method from Vitor
         """
-        return 0
-        # # Michel Energy Regularization
-        # # Get the integral of all michel hits within an event and sum them. Then, use this sum to predict the deposited
-        # # energy according to a linear relation that I've derived from the h5 dataset. Note that we don't even need to
-        # # use `edep`, we can use the regularization with the integral directly since they are related by a constant.
-        # edep_lim = 160
-        # pdf_amp = 10
-        # # Hyperparams to tune
-        # # edep_lim is the cutoff limit modifier
-        # # pdf_amp is a adjustment on the pdf reading
+        # Michel Energy Regularization
+        # Get the integral of all michel hits within an event and sum them. Then, use this sum to predict the deposited
+        # energy according to a linear relation that I've derived from the h5 dataset. Note that we don't even need to
+        # use `edep`, we can use the regularization with the integral directly since they are related by a constant.
 
-        # edep_lim = 160
-        # pdf_amp = 10
+        # Hyperparams to tune
+        # pdf_amp is a adjustment on the pdf reading
+        pdf_amp = 10
+        michel_index = 3
+        michel_reg_cte = 1e-2
+        edep_michel = 0.0
+        michel_reg_loss = 0.0
 
-        # edep_michel = 0.0
+        base_loss = torch.nn.CrossEntropyLoss(ignore_index=-1)(y_hat, label.y_semantic)
 
-        # # Finding the indices of the entries that truly correspond to michel electrons
-        # michel_idxs = torch.nonzero(y_pred == self.michel_id)
+        # Finding the indices of the entries that truly correspond to michel electrons
+        michel_indices = torch.nonzero(torch.argmax(y_hat, dim=1) == michel_index)
 
-        # # If we predict a michel electron then find its deposited energy
-        # if self.michel_id in y_pred:
-        #     # Getting the `integral` feature of the nodes that the semantic decoder labeled as michel
-        #     sumintegral_michel = torch.sum(
-        #         x[p].x_raw[michel_idxs, 2]
-        #     )  # Integral is the third feature
+        # Getting the `integral` feature of the nodes that the semantic decoder labeled as michel
+        integral_michel = torch.sum(
+            label.x[michel_indices, 2]
+        )  # Integral is the third feature
 
-        #     # Finding the deposited energy from that `integral`
-        #     edep_michel += sumintegral_michel * 0.00580717
+        # Finding the deposited energy from that `integral`
+        edep_michel += integral_michel * 0.00580717
 
-        # if edep_michel > 0:
-        #     # Adding a penalty to the loss based on the predicted deposited energy and its expected value
-        #     if (
-        #         self.reg_dist_type == "cutoff"
-        #     ):  # hard cutoff for very high deposited energies
-        #         if edep_michel > edep_lim:
-        #             michel_reg_loss += (
-        #                 self.michel_reg_cte * (edep_michel - edep_lim) / 15
-        #             )
+        if edep_michel > 0:
+            pdf_value = self.michel_distribution.get_pdf_value(edep_michel)
+            michel_reg_loss += michel_reg_cte * (1 - pdf_amp * pdf_value)
 
-        #     elif (
-        #         self.reg_dist_type == "landau" and edep_michel > 8.5
-        #     ):  # single peak distribution
-        #         pdf_value = MichelDistribution.get_pdf_value(
-        #             edep_michel, distribution="landau"
-        #         )
-        #         michel_reg_loss += self.michel_reg_cte * (1 - pdf_amp * pdf_value)
-
-        #     elif (
-        #         self.reg_dist_type == "data"
-        #     ):  # purely from data, double peaked distribution
-        #         pdf_value = MichelDistribution.get_pdf_value(
-        #             edep_michel, distribution="data"
-        #         )
-        #         michel_reg_loss += self.michel_reg_cte * (1 - pdf_amp * pdf_value)
-
-        # # # Extracting the true deposited energies
-        # true_mich_idxs = torch.nonzero(x[p].y_semantic == self.michel_id)
-        # int += torch.sum(x[p].x_raw[true_mich_idxs, 2])
-        # if int != 0: print(f'Edep: {int * 0.00580717}')
-        # return None
+        return base_loss + michel_reg_loss
 
 
 class MichelDistribution:
@@ -191,6 +162,7 @@ class MichelDistribution:
         path = os.path.dirname(__file__)
         distribution_paths = f"{path}/michel_energy_distribution.npz"
         data = np.load(distribution_paths)
+
         if distribution == "landau":
             self.pdf = data["landau_pdf"]
             self.bin_center = data["landau_bins_center"]
@@ -199,6 +171,8 @@ class MichelDistribution:
             self.bin_center = data["data_bins_center"]
         else:
             raise ValueError(f"Cannot initialize distribution {distribution}")
+
+        self.distribution = distribution
 
     def get_pdf_value(self, edep):
         """Get the PDF from the relevant distribution, which can be `data`, `landau`, and `double_peaked`"""
