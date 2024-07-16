@@ -114,3 +114,9 @@ class AccuracyActivationVectors(DynamicProbedNetwork):
             ""
         else:
             plt.show()
+
+    def cluster_latent_space(self):
+        pass
+
+    def produce_maximization(self):
+        pass

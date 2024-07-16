@@ -10,6 +10,9 @@ from torch_geometric.loader import DataLoader
 from nugraph.explain_graph.algorithms.linear_probes.linear_decoder import (
     DynamicLinearDecoder,
 )
+from nugraph.explain_graph.algorithms.linear_probes.latent_representation import (
+    LatentRepresentation,
+)
 
 from torch.utils.data.distributed import DistributedSampler
 from torch.distributed import init_process_group, destroy_process_group
@@ -89,7 +92,7 @@ class DynamicProbedNetwork:
         return m
 
     def decoder_in_func(self, x):
-        m = self.message_in_function(x)
+        m = self.message_in_function(x, message_passing_steps=5)
         _, _, _, _, batch = self.model.unpack_batch(x)
 
         decoder_out = self.model.semantic_decoder(m, batch)["x_semantic"]
@@ -170,6 +173,29 @@ class DynamicProbedNetwork:
                 "w",
             ) as f:
                 json.dump(metric_history, f)
+
+    def make_baseline(self, loss_function, batch_limit):
+        mean_loss = 0
+        for index, batch in enumerate(tqdm.tqdm(self.data)):
+            if index < batch_limit:
+                prediction = self.decoder_in_func(batch)
+                loss = loss_function(prediction, batch)
+                mean_loss += loss
+
+        return mean_loss / batch_limit
+
+    def cluster_latent_space(self):
+        probe = self.load_probe()
+        LatentRepresentation(
+            embedding_function=probe.forward,
+            data_loader=self.data,
+            out_path=self.out_path,
+            name="",
+            title="",
+        )()
+
+    def produce_maximization(self):
+        pass
 
 
 class TrainSingleProbe:

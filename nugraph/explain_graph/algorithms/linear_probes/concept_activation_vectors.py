@@ -42,6 +42,7 @@ class ConceptActivateVectors(DynamicProbedNetwork):
             "tracks": self.track_loss,
             "hipmip": self.hipmip_loss,
             "michel": self.michel_presence_loss,
+            "michel_energy": self.michel_energy_loss,
         }
 
         try:
@@ -61,6 +62,9 @@ class ConceptActivateVectors(DynamicProbedNetwork):
         return FeatureLoss(feature="michel_conservation").loss(
             y_hat, y.collect("y_semantic")
         )
+
+    def michel_energy_loss(self, y_hat, y):
+        return FeatureLoss(feature="michel_energy").loss(y_hat, y.collect("y_semantic"))
 
     def train_encoder(self, epochs, overwrite, test=False):
         history, class_losses = self.train(
