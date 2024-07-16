@@ -64,7 +64,7 @@ class ConceptActivateVectors(DynamicProbedNetwork):
         )
 
     def michel_energy_loss(self, y_hat, y):
-        return FeatureLoss(feature="michel_energy").loss(y_hat, y)
+        return FeatureLoss(feature="michel_energy", device=self.device).loss(y_hat, y)
 
     def train_encoder(self, epochs, overwrite, test=False):
         history, class_losses = self.train(
