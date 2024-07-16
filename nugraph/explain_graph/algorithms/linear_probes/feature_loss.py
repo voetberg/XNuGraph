@@ -27,7 +27,7 @@ class FeatureLoss:
             )
 
         self.func = self.included_features[feature]
-        self.michel_distribution = MichelDistribution()
+        self.michel_distribution = MichelDistribution(device=device)
 
     def loss(self, y_hat, y):
         loss = 0
@@ -134,7 +134,6 @@ class FeatureLoss:
         pdf_amp = 10
         michel_index = 3
         michel_reg_cte = 1e-2
-        edep_michel = 0.0
         michel_reg_loss = 0.0
 
         base_loss = torch.nn.CrossEntropyLoss(ignore_index=-1)(y_hat, label.y_semantic)
@@ -148,7 +147,7 @@ class FeatureLoss:
         )  # Integral is the third feature
 
         # Finding the deposited energy from that `integral`
-        edep_michel += integral_michel * 0.00580717
+        edep_michel = integral_michel * 0.00580717
 
         if edep_michel > 0:
             pdf_value = self.michel_distribution.get_pdf_value(edep_michel)
@@ -158,11 +157,11 @@ class FeatureLoss:
 
 
 class MichelDistribution:
-    def __init__(self, distribution: str = "landau") -> None:
+    def __init__(self, distribution: str = "landau", device="cpu") -> None:
         path = os.path.dirname(__file__)
         distribution_paths = f"{path}/michel_energy_distribution.npz"
         data = np.load(distribution_paths)
-
+        self.device = device
         if distribution == "landau":
             self.pdf = data["landau_pdf"]
             self.bin_center = data["landau_bins_center"]
@@ -175,7 +174,8 @@ class MichelDistribution:
         self.distribution = distribution
 
     def get_pdf_value(self, edep):
-        """Get the PDF from the relevant distribution, which can be `data`, `landau`, and `double_peaked`"""
-        closest_idx = np.argmin(np.abs(edep - self.bin_center))
-        pdf = self.pdf[closest_idx]
+        closest_idx = torch.argmin(
+            torch.abs(edep - torch.tensor(self.bin_center, device=self.device))
+        )
+        pdf = torch.tensor(self.pdf[closest_idx], device=self.device)
         return pdf
