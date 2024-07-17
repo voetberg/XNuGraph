@@ -23,6 +23,7 @@ class ConceptActivateVectors(DynamicProbedNetwork):
         test=False,
         batch_size: int = 64,
         loss_function="tracks",
+        include_other_losses=True,
     ) -> None:
         super().__init__(
             model,
@@ -41,7 +42,7 @@ class ConceptActivateVectors(DynamicProbedNetwork):
         self.included_losses = {
             "tracks": self.track_loss,
             "hipmip": self.hipmip_loss,
-            "michel": self.michel_presence_loss,
+            "michel_conservation": self.michel_presence_loss,
             "michel_energy": self.michel_energy_loss,
         }
 
@@ -51,20 +52,30 @@ class ConceptActivateVectors(DynamicProbedNetwork):
             print(
                 f"{loss_function} not included as a loss function, choose from {self.included_losses.keys()}"
             )
+        self.feature_loss = FeatureLoss(feature=loss_function, device=self.device)
+        self.include_metrics = (
+            [func for key, func in self.included_losses.items() if key != loss_function]
+            if include_other_losses
+            else []
+        )
 
     def track_loss(self, y_hat, y):
-        return FeatureLoss(feature="tracks").loss(y_hat, y.collect("y_semantic"))
+        return self.feature_loss.loss(
+            y_hat, y.collect("y_semantic"), loss_func="tracks"
+        )
 
     def hipmip_loss(self, y_hat, y):
-        return FeatureLoss(feature="hipmip").loss(y_hat, y.collect("y_semantic"))
+        return self.feature_loss.loss(
+            y_hat, y.collect("y_semantic"), loss_func="hipmip"
+        )
 
     def michel_presence_loss(self, y_hat, y):
-        return FeatureLoss(feature="michel_conservation").loss(
-            y_hat, y.collect("y_semantic")
+        return self.feature_loss.loss(
+            y_hat, y.collect("y_semantic"), loss_func="michel_conservation"
         )
 
     def michel_energy_loss(self, y_hat, y):
-        return FeatureLoss(feature="michel_energy", device=self.device).loss(y_hat, y)
+        return self.feature_loss.loss(y_hat, y, loss_func="michel_energy")
 
     def train_encoder(self, epochs, overwrite, test=False):
         history, class_losses = self.train(
@@ -88,7 +99,7 @@ class ConceptActivateVectors(DynamicProbedNetwork):
             embedding_function=embedding_function,
             n_out_features=len(self.semantic_classes),
             loss_function=self.loss_function,
-            extra_metrics=[func for func in self.included_losses.values()],
+            extra_metrics=self.include_metrics,
         )
         history, extra_losses = super().train(probe, overwrite, epochs)
         return history, extra_losses

@@ -29,10 +29,15 @@ class FeatureLoss:
         self.func = self.included_features[feature]
         self.michel_distribution = MichelDistribution(device=device)
 
-    def loss(self, y_hat, y):
+    def loss(self, y_hat, y, loss_func=None):
+        if loss_func is None:
+            func = self.func
+        else:
+            func = self.included_features[loss_func]
+
         loss = 0
         for p in self.planes:
-            loss += self.func(y_hat[p], y[p])
+            loss += func(y_hat[p], y[p])
         return loss / len(self.planes)
 
     def _tracks(self, y_hat, label):
@@ -171,11 +176,11 @@ class MichelDistribution:
         else:
             raise ValueError(f"Cannot initialize distribution {distribution}")
 
+        self.pdf = torch.tensor(self.pdf, device=self.device)
+        self.bin_center = torch.tensor(self.bin_center, device=self.device)
         self.distribution = distribution
 
     def get_pdf_value(self, edep):
-        closest_idx = torch.argmin(
-            torch.abs(edep - torch.tensor(self.bin_center, device=self.device))
-        )
-        pdf = torch.tensor(self.pdf[closest_idx], device=self.device)
+        closest_idx = torch.argmin(torch.abs(edep - self.bin_center))
+        pdf = self.pdf[closest_idx]
         return pdf
