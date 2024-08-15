@@ -144,7 +144,7 @@ class ActivatedVector:
                 device=self.device,
                 data_path=self.data_path,
             )
-        elif scheme == "random":
+        elif init == "random":
             scheme = RandomPrior(
                 self.planes,
                 n_planar_range,
