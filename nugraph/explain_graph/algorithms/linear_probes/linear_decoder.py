@@ -28,6 +28,9 @@ class DynamicLinearDecoder(torch.nn.Module):
             extra_metrics if isinstance(extra_metrics, Iterable) else [extra_metrics]
         )
 
+    def load_weights(self, path):
+        self.load_state_dict(torch.load(path, map_location=self.device))
+
     def class_decoder(self, in_shape, out_shape):
         return torch.nn.Linear(*in_shape, out_shape).to(device=self.device)
 

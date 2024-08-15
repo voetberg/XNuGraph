@@ -93,13 +93,18 @@ class ConceptActivateVectors(DynamicProbedNetwork):
         )
         return history, class_losses
 
-    def train(self, embedding_function, overwrite: bool = False, epochs: int = 25):
-        probe = self.make_probe(
+    def make_probe(self, embedding_function):
+        return super().make_probe(
             input_features=(self.model.planar_features,),
             embedding_function=embedding_function,
             n_out_features=len(self.semantic_classes),
             loss_function=self.loss_function,
             extra_metrics=self.include_metrics,
+        )
+
+    def train(self, embedding_function, overwrite: bool = False, epochs: int = 25):
+        probe = self.make_probe(
+            embedding_function=embedding_function,
         )
         history, extra_losses = super().train(probe, overwrite, epochs)
         return history, extra_losses

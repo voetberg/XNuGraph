@@ -35,7 +35,12 @@ class EdgeVisuals:
 
     def plot_graph(self, graph, subgraph, plane, axes):
         nodes = subgraph.nodes
-        position = {node: graph[plane]["pos"][node].tolist() for node in nodes}
+        try:
+            position = {node: graph[plane]["pos"][node].tolist() for node in nodes}
+        except IndexError:  # If the nodes are given as tensors
+            position = {
+                node: graph[plane]["pos"][int(node.item())].tolist() for node in nodes
+            }
         node_list = list(subgraph)
         weight_colors = extract_edge_weights(graph, plane)
         edge_list = subgraph.edges(node_list)
@@ -57,8 +62,13 @@ class EdgeVisuals:
 
     def draw_ghost_plot(self, graph, plane, axes):
         subgraph = make_subgraph_kx(graph, plane=plane)
-        position = {node: graph[plane]["pos"][node].tolist() for node in subgraph.nodes}
-
+        nodes = subgraph.nodes
+        try:
+            position = {node: graph[plane]["pos"][node].tolist() for node in nodes}
+        except IndexError:  # If the nodes are given as tensors
+            position = {
+                node: graph[plane]["pos"][int(node.item())].tolist() for node in nodes
+            }
         drawn_plot = nx.draw_networkx(
             subgraph,
             pos=position,

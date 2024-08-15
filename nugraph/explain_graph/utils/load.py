@@ -3,7 +3,7 @@ import pytorch_lightning as pl
 import h5py
 import os
 
-from nugraph.models import NuGraph2, PrunedNuGraph
+from nugraph.models import NuGraph2
 from nugraph.data import H5DataModule, H5Dataset
 from nugraph import util
 
@@ -23,7 +23,6 @@ class Load:
         test=False,
         planes=["u", "v", "y"],
         n_batches=None,
-        prune=False,
         prune_index=None,
         load_data=True,
         add_features=False,
@@ -44,7 +43,7 @@ class Load:
                 data_path, batch_size=batch_size, n_batches=n_batches
             )
 
-        graph_model = NuGraph2 if not prune else PrunedNuGraph
+        graph_model = NuGraph2
         try:
             self.model = self.load_checkpoint(checkpoint_path, graph_model, prune_index)
 

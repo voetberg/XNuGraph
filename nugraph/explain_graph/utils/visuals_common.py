@@ -29,7 +29,13 @@ def make_subgraph_kx(graph, plane, semantic_classes=None):
             subgraph_nx.add_edge(v, u)
 
     nodes = subgraph_nx.nodes
-    position = {node: graph[plane]["pos"][node].tolist() for node in nodes}
+
+    try:
+        position = {node: graph[plane]["pos"][node].tolist() for node in nodes}
+    except IndexError:  # If the nodes are given as tensors
+        position = {
+            node: graph[plane]["pos"][int(node.item())].tolist() for node in nodes
+        }
 
     nx.set_node_attributes(subgraph_nx, position, "pos")
     if semantic_classes is not None:

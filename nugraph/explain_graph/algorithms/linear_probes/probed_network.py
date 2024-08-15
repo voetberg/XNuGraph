@@ -116,11 +116,12 @@ class DynamicProbedNetwork:
         )
         return probe
 
-    def load_probe(self):
-        self.probe.load_state_dict(
+    def load_probe(self, probe):
+        probe.load_state_dict(
             torch.load(f"{self.out_path}/{self.probe_name}_probe_weights.pt")
         )
-        self.probe.eval()
+        probe.eval()
+        return probe
 
     def destroy_gpu_group(self):
         try:
