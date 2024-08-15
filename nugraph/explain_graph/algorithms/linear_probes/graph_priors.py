@@ -210,7 +210,7 @@ class MeanPrior(GraphPrior):
         self._calculate_mean()
 
     def _load_dataset(self, path):
-        data = Load(data_path=path, planes=self.planes).data
+        data = Load(planes=self.planes, auto_load=False).load_data(path)
 
         self.features = defaultdict(lambda: defaultdict(list))
         for plane in self.planes:

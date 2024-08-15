@@ -1,7 +1,6 @@
 import torch
 import pytorch_lightning as pl
 import h5py
-import os
 
 from nugraph.models import NuGraph2
 from nugraph.data import H5DataModule, H5Dataset
@@ -26,10 +25,9 @@ class Load:
         prune_index=None,
         load_data=True,
         add_features=False,
+        load_model=True,
+        auto_load=True,
     ) -> None:
-        assert os.path.exists(data_path)
-        assert os.path.exists(checkpoint_path)
-
         self.message_passing_steps = message_passing_steps
         self.data_path = data_path
         self.test = test
@@ -38,21 +36,21 @@ class Load:
         if self.test:
             n_batches = 1
 
-        if load_data:
+        if load_data and auto_load:
             self.data = self.load_data(
                 data_path, batch_size=batch_size, n_batches=n_batches
             )
 
-        graph_model = NuGraph2
-        try:
-            self.model = self.load_checkpoint(checkpoint_path, graph_model, prune_index)
+        if load_model and auto_load:
+            try:
+                self.model = self.load_model(checkpoint_path, prune_index=prune_index)
 
-        except Exception as e:
-            print(e)
-            print("Could not load checkpoint, using an untrained network")
-            self.model = NuGraph2()
+            except Exception as e:
+                print(e)
+                print("Could not load checkpoint, using an untrained network")
+                self.model = NuGraph2()
 
-    def load_checkpoint(self, checkpoint_path, graph=NuGraph2, prune_index=None):
+    def load_model(self, checkpoint_path, graph=NuGraph2, prune_index=None):
         # Assumed pre-trained model that can perform inference on the loaded data
 
         try:
