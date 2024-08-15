@@ -85,18 +85,17 @@ class RandomPrior(GraphPrior):
 class NormalPrior(GraphPrior):
     # Draw from a normal distribution matching the data
     def __init__(
-        self, planes, range_planar_nodes, range_nexus_nodes, rng, device
+        self, planes, range_planar_nodes, range_nexus_nodes, rng, device, data_path
     ) -> None:
         super().__init__(planes, range_planar_nodes, range_nexus_nodes)
         self.rng = rng
         self.device = device
 
-        self._load_dataset()
+        self._load_dataset(data_path)
         self._calculate_mean()
         self._calculate_variance()
 
-    def _load_dataset(self):
-        path = "./test_data/analysis_subset.h5"
+    def _load_dataset(self, path):
         data = Load(data_path=path, planes=self.planes).data
 
         self.features = defaultdict(lambda: defaultdict(list))
@@ -201,17 +200,16 @@ class NormalPrior(GraphPrior):
 
 class MeanPrior(GraphPrior):
     def __init__(
-        self, planes, range_planar_nodes, range_nexus_nodes, rng, device
+        self, planes, range_planar_nodes, range_nexus_nodes, rng, device, data_path
     ) -> None:
         super().__init__(planes, range_planar_nodes, range_nexus_nodes)
         self.rng = rng
         self.device = device
 
-        self._load_dataset()
+        self._load_dataset(data_path)
         self._calculate_mean()
 
-    def _load_dataset(self):
-        path = "./test_data/analysis_subset.h5"
+    def _load_dataset(self, path):
         data = Load(data_path=path, planes=self.planes).data
 
         self.features = defaultdict(lambda: defaultdict(list))
@@ -269,11 +267,11 @@ class MeanPrior(GraphPrior):
 
 class MeanDifferencePrior(GraphPrior):
     def __init__(
-        self, planes, range_planar_nodes, range_nexus_nodes, rng, device
+        self, planes, range_planar_nodes, range_nexus_nodes, rng, device, data_path
     ) -> None:
         super().__init__(planes, range_planar_nodes, range_nexus_nodes)
         self.mean_prior = MeanPrior(
-            planes, range_planar_nodes, range_nexus_nodes, rng, device
+            planes, range_planar_nodes, range_nexus_nodes, rng, device, data_path
         )
         self.random_prior = RandomPrior(
             planes,

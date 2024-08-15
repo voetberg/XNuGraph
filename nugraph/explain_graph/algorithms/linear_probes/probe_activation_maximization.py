@@ -25,6 +25,7 @@ class ActivatedVector:
             "random", "normal", "mean", "mean_difference", "sample"
         ] = "random",
         outdir="./",
+        data_path=None,
         planes: Sequence[str] = ("u", "v", "y"),
         range_planar_nodes: tuple[float] = (75, 300),
         range_nexus_nodes: tuple[float] = (20, 75),
@@ -48,6 +49,7 @@ class ActivatedVector:
 
         self.rng = np.random.default_rng(random_seed)
         self.probe = trained_probe
+        self.data_path = data_path
 
         self.planes = planes
         self.position_range = position_range
@@ -121,14 +123,26 @@ class ActivatedVector:
         if init == "sample":
             raise NotImplementedError
         elif init == "normal":
-            scheme = NormalPrior(self.planes, None, None, self.rng, self.device)
+            scheme = NormalPrior(
+                self.planes, None, None, self.rng, self.device, data_path=self.data_path
+            )
         elif init == "mean":
             scheme = MeanPrior(
-                self.planes, None, None, rng=self.rng, device=self.device
+                self.planes,
+                None,
+                None,
+                rng=self.rng,
+                device=self.device,
+                data_path=self.data_path,
             )
         elif init == "mean_difference":
             scheme = MeanDifferencePrior(
-                self.planes, n_planar_range, n_nexus_range, self.rng, device=self.device
+                self.planes,
+                n_planar_range,
+                n_nexus_range,
+                self.rng,
+                device=self.device,
+                data_path=self.data_path,
             )
         elif scheme == "random":
             scheme = RandomPrior(
