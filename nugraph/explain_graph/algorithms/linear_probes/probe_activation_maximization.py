@@ -310,6 +310,8 @@ class ActivatedVector:
         figure, subplot = plt.subplots()
         for plane in self.planes:
             grad_history = self.mean_gradient_difference[plane]
+            if not grad_history.is_cpu:
+                grad_history = grad_history.cpu()
             steps = range(len(grad_history))
             subplot.plot(steps, grad_history, label=plane)
 
