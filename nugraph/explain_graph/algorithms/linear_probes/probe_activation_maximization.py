@@ -90,8 +90,10 @@ class ActivatedVector:
             )
             if not positions.is_cpu:
                 positions = positions.cpu()
-            calced_edges = Delaunay(positions.detach()).simplices[:, :-1]
+            if not nexus_positions.is_cpu:
+                nexus_positions = nexus_positions.cpu()
 
+            calced_edges = Delaunay(positions.detach()).simplices[:, :-1]
             abs_nexus_position = torch.sum(nexus_positions, -1) / 2
             abs_position = torch.sum(positions.detach(), -1) / 2
 
