@@ -88,6 +88,8 @@ class ActivatedVector:
             positions = self.normalize_position(
                 planar_positions=graph[plane]["x"][:, 2:], plane=plane
             )
+            if not positions.is_cpu:
+                positions = positions.cpu()
             calced_edges = Delaunay(positions.detach()).simplices[:, :-1]
 
             abs_nexus_position = torch.sum(nexus_positions, -1) / 2
