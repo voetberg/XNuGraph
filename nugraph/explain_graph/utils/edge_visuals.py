@@ -238,8 +238,11 @@ class EdgeVisuals:
             self.draw_ghost_plot(graph, plane, subplot[1])
             self.draw_ghost_plot(graph, plane, subplot[2])
 
-            x, y = graph.collect("pos")[plane][:, 0], graph.collect("pos")[plane][:, 1]
-            true_labels = graph.collect("y_semantic")[plane]
+            x, y = (
+                graph.collect("pos")[plane][:, 0].cpu(),
+                graph.collect("pos")[plane][:, 1].cpu(),
+            )
+            true_labels = graph.collect("y_semantic")[plane].cpu()
 
             predict_label = torch.argmax(graph.collect("x_semantic")[plane], axis=1)
 
@@ -249,9 +252,9 @@ class EdgeVisuals:
                         xi, yi, label.item(), va="bottom", ha="center", fontsize="small"
                     )
 
-            largest = np.max(np.array(graph.collect("x_semantic")[plane]), axis=1)
+            largest = np.max(np.array(graph.collect("x_semantic")[plane].cpu()), axis=1)
             second = np.partition(
-                np.array(graph.collect("x_semantic")[plane]).T,
+                np.array(graph.collect("x_semantic")[plane].cpu()).T,
                 kth=-2,
             )[-2]
 
