@@ -21,6 +21,7 @@ class ActivatedVector:
     def __init__(
         self,
         trained_probe,
+        network_forward_function=None,
         initialization_scheme: Literal[
             "random", "normal", "mean", "mean_difference", "sample"
         ] = "random",
@@ -49,6 +50,9 @@ class ActivatedVector:
 
         self.rng = np.random.default_rng(random_seed)
         self.probe = trained_probe
+        self.network_forward_function = network_forward_function
+        if self.network_forward_function is None:
+            self.network_forward_function = self.probe_forward
         self.data_path = data_path
 
         self.planes = planes
@@ -174,14 +178,14 @@ class ActivatedVector:
         graph = HeteroData(graph)
         return graph
 
-    def forward_probe(self):
-        m = self.probe.input_function(self.graph)
-        prediction = self.probe.forward(m)
+    def probe_forward(self, probe, graph):
+        m = probe.input_function(graph)
+        prediction = probe.forward(m)
         return prediction
 
     def get_activation(self):
         gradient = {}
-        prediction = self.forward_probe()
+        prediction = self.network_forward_function(self.probe, self.graph)
         for plane in self.planes:
             # compute gradients w.r.t. target unit,
             # then access the gradient of input (image) w.r.t. target unit (neuron)
