@@ -2,7 +2,11 @@
 Evaluate how well a network can learn a specific feature in a location, and then visualize it with activation maximization
 """
 
+import json
+import os
 from typing import Literal
+
+from matplotlib import pyplot as plt
 from nugraph.explain_graph.algorithms.linear_probes.feature_loss import FeatureLoss
 from nugraph.explain_graph.algorithms.linear_probes.probed_network import (
     DynamicProbedNetwork,
@@ -116,3 +120,37 @@ class ConceptActivateVectors(DynamicProbedNetwork):
         )
         history, extra_losses = super().train(probe, overwrite, epochs)
         return history, extra_losses
+
+    def visualize(self, show=True, base_path="./", title="Loss", baseline=0.25):
+        loss_histories = [
+            file for file in os.listdir(base_path) if "_probe_history.json" in file
+        ]
+
+        figure, subplots = plt.subplots(
+            nrows=1, sharex=True, sharey=True, figsize=(6, 4)
+        )
+        figure.supxlabel("Epochs")
+        figure.supylabel(title)
+
+        colors = ["darkorange", "dodgerblue", "limegreen", "palevioletred", "indigo"]
+
+        for history, color in zip(loss_histories, colors):
+            label = history.rstrip("_history.json").lstrip("tracks_")
+            history_file = json.load(open(f"{base_path}/{history}"))
+            subplots.plot(
+                range(len(history_file)),
+                history_file,
+                label=label,
+                color=color,
+                marker=".",
+            )
+
+        plt.hlines(
+            y=baseline, xmin=0, xmax=len(history_file), linestyle="--", color="grey"
+        )
+        figure.legend()
+        if show:
+            plt.show()
+
+        plt.savefig(f"{base_path.rstrip('/')}/{title}_history.png")
+        plt.close("all")
