@@ -1,3 +1,4 @@
+from typing import Literal, Sequence
 import torch
 import numpy as np
 import os
@@ -5,7 +6,17 @@ import os
 
 class FeatureLoss:
     def __init__(
-        self, feature: str, planes: list = ["u", "v", "y"], device=None
+        self,
+        feature: Literal[
+            "tracks",
+            "hipmip",
+            "node_slope",
+            "michel_conversation",
+            "michel_energy",
+            "michel",
+        ],
+        planes: Sequence = {"u", "v", "y"},
+        device=None,
     ) -> None:
         self.planes = planes
         if device is None:
@@ -19,6 +30,7 @@ class FeatureLoss:
             "node_slope": self._node_slope,
             "michel_conservation": self._michel_required,
             "michel_energy": self._michel_energy,
+            "michel": self._michel,
         }
 
         for index, feat in enumerate(["wire", "peak", "integral", "rms"]):
@@ -66,6 +78,21 @@ class FeatureLoss:
         loss = torch.nn.CrossEntropyLoss(ignore_index=-1)(
             y_hat_binary, label_binary.long()
         )
+        return loss
+
+    def _michel(self, y_hat, label):
+        """
+        Verify that michel electrons are correctly identified.
+        """
+        michel_filter = torch.where(
+            torch.tensor([True], device=self.device),
+            torch.isin(label, torch.tensor([3], device=self.device)),
+            other=torch.tensor([torch.nan], device=self.device),
+        )  # Pick if in either track class
+        y = label * michel_filter
+        y = y.type(torch.LongTensor).to(torch.device(self.device))
+        y_hat = y_hat * torch.stack([michel_filter for _ in range(y_hat.size(1))]).mT
+        loss = torch.nn.CrossEntropyLoss()(y_hat, y)
         return loss
 
     def _hipmip(self, y_hat, label):

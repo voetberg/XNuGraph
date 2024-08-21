@@ -2,6 +2,7 @@
 Evaluate how well a network can learn a specific feature in a location, and then visualize it with activation maximization
 """
 
+from typing import Literal
 from nugraph.explain_graph.algorithms.linear_probes.feature_loss import FeatureLoss
 from nugraph.explain_graph.algorithms.linear_probes.probed_network import (
     DynamicProbedNetwork,
@@ -22,7 +23,9 @@ class ConceptActivateVectors(DynamicProbedNetwork):
         multicore=True,
         test=False,
         batch_size: int = 64,
-        loss_function="tracks",
+        loss_function: Literal[
+            "tracks", "hipmip", "michel", "michel_energy"
+        ] = "tracks",
         include_other_losses=True,
     ) -> None:
         super().__init__(
@@ -42,7 +45,7 @@ class ConceptActivateVectors(DynamicProbedNetwork):
         self.included_losses = {
             "tracks": self.track_loss,
             "hipmip": self.hipmip_loss,
-            "michel_conservation": self.michel_presence_loss,
+            "michel": self.michel_loss,
             "michel_energy": self.michel_energy_loss,
         }
 
@@ -72,6 +75,11 @@ class ConceptActivateVectors(DynamicProbedNetwork):
     def michel_presence_loss(self, y_hat, y):
         return self.feature_loss.loss(
             y_hat, y.collect("y_semantic"), loss_func="michel_conservation"
+        )
+
+    def michel_loss(self, y_hat, y):
+        return self.feature_loss.loss(
+            y_hat, y.collect("y_semantic"), loss_func="michel"
         )
 
     def michel_energy_loss(self, y_hat, y):
