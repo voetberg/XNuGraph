@@ -131,8 +131,7 @@ class ConceptActivateVectors(ProbedNetwork):
         folds = KFold(folds, shuffle=True, random_state=random_state)
         original_data = self.data.dataset
         history = []
-        for index_a, index_b in folds.split(original_data):
-            index = np.array([index_a, index_b]).ravel()
+        for index, _ in folds.split(original_data):
             self.data = DataLoader(
                 original_data, sampler=SubsetRandomSampler(indices=index)
             )
