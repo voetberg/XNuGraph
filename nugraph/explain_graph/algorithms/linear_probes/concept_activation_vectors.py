@@ -141,10 +141,10 @@ class ConceptActivateVectors(ProbedNetwork):
             history.append(history_fold)
 
         result = {
-            "mean": np.mean(np.array(history)),
-            "std": np.std(np.array(history)),
-            "n_folds": folds.get_n_splits(),
-            "seed": random_state,
+            "mean": np.mean(np.array(history), axis=0, dtype=float).tolist(),
+            "std": np.std(np.array(history), axis=0, dtype=float).tolist(),
+            "n_folds": int(folds.get_n_splits()),
+            "seed": int(random_state),
             "history": history,
         }
 
