@@ -25,7 +25,7 @@ def group_setup(device, total_devices):
     init_process_group(backend="nccl", rank=device, world_size=total_devices)
 
 
-class DynamicProbedNetwork:
+class ProbedNetwork:
     def __init__(
         self,
         model,
@@ -175,16 +175,6 @@ class DynamicProbedNetwork:
             ) as f:
                 json.dump(metric_history, f)
 
-    def make_baseline(self, loss_function, batch_limit):
-        mean_loss = 0
-        for index, batch in enumerate(tqdm(self.data)):
-            if index < batch_limit:
-                prediction = self.decoder_in_func(batch)
-                loss = loss_function(prediction, batch)
-                mean_loss += loss
-
-        return mean_loss / batch_limit
-
     def cluster_latent_space(self):
         probe = self.load_probe()
         LatentRepresentation(
@@ -194,9 +184,6 @@ class DynamicProbedNetwork:
             name="",
             title="",
         )()
-
-    def produce_maximization(self):
-        pass
 
 
 class TrainSingleProbe:

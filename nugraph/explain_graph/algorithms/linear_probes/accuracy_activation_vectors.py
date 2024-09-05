@@ -3,7 +3,7 @@ Evaluate the ability for a network section to learn a the target of the network
 """
 
 from nugraph.explain_graph.algorithms.linear_probes.probed_network import (
-    DynamicProbedNetwork,
+    ProbedNetwork,
 )
 
 import numpy as np
@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import torch
 
 
-class AccuracyActivationVectors(DynamicProbedNetwork):
+class AccuracyActivationVectors(ProbedNetwork):
     def __init__(
         self,
         model,

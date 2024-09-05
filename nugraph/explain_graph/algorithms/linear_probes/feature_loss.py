@@ -88,7 +88,7 @@ class FeatureLoss:
             torch.tensor([True], device=self.device),
             torch.isin(label, torch.tensor([3], device=self.device)),
             other=torch.tensor([torch.nan], device=self.device),
-        )  # Pick if in either track class
+        )
         y = label * michel_filter
         y = y.type(torch.LongTensor).to(torch.device(self.device))
         y_hat = y_hat * torch.stack([michel_filter for _ in range(y_hat.size(1))]).mT

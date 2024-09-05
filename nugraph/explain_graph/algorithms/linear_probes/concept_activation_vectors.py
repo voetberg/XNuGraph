@@ -7,13 +7,18 @@ import os
 from typing import Literal
 
 from matplotlib import pyplot as plt
+import numpy as np
+from torch_geometric.loader import DataLoader
+from sklearn.model_selection import KFold
+from torch.utils.data import SubsetRandomSampler
+
 from nugraph.explain_graph.algorithms.linear_probes.feature_loss import FeatureLoss
 from nugraph.explain_graph.algorithms.linear_probes.probed_network import (
-    DynamicProbedNetwork,
+    ProbedNetwork,
 )
 
 
-class ConceptActivateVectors(DynamicProbedNetwork):
+class ConceptActivateVectors(ProbedNetwork):
     def __init__(
         self,
         model,
@@ -89,7 +94,7 @@ class ConceptActivateVectors(DynamicProbedNetwork):
     def michel_energy_loss(self, y_hat, y):
         return self.feature_loss.loss(y_hat, y, loss_func="michel_energy")
 
-    def train_encoder(self, epochs, overwrite, test=False):
+    def train_encoder(self, epochs, overwrite):
         history, class_losses = self.train(
             embedding_function=self.encoder_in_func,
             epochs=epochs,
@@ -121,7 +126,39 @@ class ConceptActivateVectors(DynamicProbedNetwork):
         history, extra_losses = super().train(probe, overwrite, epochs)
         return history, extra_losses
 
-    def visualize(self, show=True, base_path="./", title="Loss", baseline=0.25):
+    def kfold_train(self, embedding_function, folds, epochs):
+        random_state = np.random.default_rng().integers(0, 10**6)
+        folds = KFold(folds, shuffle=True, random_state=random_state)
+        original_data = self.data.dataset
+        history = []
+        for index_a, index_b in folds.split(original_data):
+            index = np.array([index_a, index_b]).ravel()
+            self.data = DataLoader(
+                original_data, sampler=SubsetRandomSampler(indices=index)
+            )
+            history_fold, _ = self.train(
+                embedding_function, overwrite=True, epochs=epochs
+            )
+            history.append(history_fold)
+
+        result = {
+            "mean": np.mean(np.array(history)),
+            "std": np.std(np.array(history)),
+            "n_folds": folds.get_n_splits(),
+            "seed": random_state,
+            "history": history,
+        }
+
+        with open(
+            f"{self.out_path}/{self.probe_name}_kfold_history.json",
+            "w",
+        ) as f:
+            json.dump(result, f)
+
+        return result
+
+    @staticmethod
+    def visualize(show=True, base_path="./", title="Loss", baseline=0.25):
         loss_histories = [
             file for file in os.listdir(base_path) if "_probe_history.json" in file
         ]
@@ -144,13 +181,17 @@ class ConceptActivateVectors(DynamicProbedNetwork):
                 color=color,
                 marker=".",
             )
-
-        plt.hlines(
-            y=baseline, xmin=0, xmax=len(history_file), linestyle="--", color="grey"
-        )
+        if baseline is not None:
+            plt.hlines(
+                y=baseline, xmin=0, xmax=len(history_file), linestyle="--", color="grey"
+            )
         figure.legend()
         if show:
             plt.show()
 
-        plt.savefig(f"{base_path.rstrip('/')}/{title}_history.png")
+        plt.savefig(f"{base_path.rstrip('/')}/{title.lower()}_history.png")
         plt.close("all")
+
+    @staticmethod
+    def evaluate():
+        ""

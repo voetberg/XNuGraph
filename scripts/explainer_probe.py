@@ -1,95 +1,206 @@
+import click
+
+from nugraph.explain_graph.algorithms.linear_probes.concept_activation_vectors import (
+    ConceptActivateVectors,
+)
+from nugraph.explain_graph.algorithms.linear_probes.feature_loss import FeatureLoss
 from nugraph.explain_graph.utils.load import Load
-from nugraph.explain_graph.algorithms.linear_probes.probed_network import DynamicProbedNetwork
-
-from nugraph.data import H5DataModule
-import torch.multiprocessing as mp
-import torch
-import os 
-
-data_path = "/wclustre/fwk/exatrkx/data/uboone/CHEP2023/CHEP2023.gnn.h5"
-checkpoint = "/wclustre/fwk/exatrkx/data/uboone/CHEP2023/paper.ckpt"
-outdir = "/wclustre/fwk/exatrkx/data/uboone/CHEP2023/XNuGraph/dynamic_probe/"
 
 
-def train_probe(model, subset, rank, loss_function, network_target, message_steps): 
-    network = DynamicProbedNetwork(
-        model=model, 
-        data=subset, 
-        epochs=25, 
-        rank=rank, 
-        total_devices=torch.cuda.device_count(),
-        make_latent_rep=False, 
-        make_embedding_rep=False, 
-        feature_loss=loss_function, 
-        network_target=network_target, 
-        message_passing_steps=message_steps, 
-        out_path=outdir)
-    network.train()
-
-def main_probe(rank): 
-    subset = H5DataModule(data_path=data_path, add_features=False, batch_size=1, device=rank).test_subset
-    model = Load(checkpoint_path=checkpoint, data_path=data_path, load_data=False).model
-
-    # network = DynamicProbedNetwork(
-    #     model=model, 
-    #     data=subset, 
-    #     epochs=1, 
-    #     rank=rank, 
-    #     total_devices=torch.cuda.device_count(),
-    #     make_latent_rep=False, 
-    #     make_embedding_rep=False, 
-    #     feature_loss="wire", 
-    #     network_target="encoder", 
-    #     message_passing_steps=5, 
-    #     out_path=f"{outdir.rstrip('/')}/test/", 
-    #     test=True
-    # )
-    # try: 
-    #     network.train()
-    # finally: 
-    #     for file in os.listdir(f"{outdir.rstrip('/')}/test/"): 
-    #         try: 
-    #             os.remove(f"{outdir.rstrip('/')}/test/{file}")
-    #         except IsADirectoryError: 
-    #             pass
-
-    all_losses = [ "tracks", "hipmip", "node_slope",  "michel_conservation", 'wire', 'peak', 'integral', 'rms']
-    #all_losses = []
-    for feature_loss in all_losses: 
-        train_probe(model, subset, rank, feature_loss, network_target="encoder", message_steps=5)
-
-        for message_passing_step in [1, 3, 5]: 
-            train_probe(model, subset, rank, feature_loss, network_target="message", message_steps=message_passing_step)
+@click.group()
+def cli():
+    pass
 
 
-def main_decomp(): 
-    subset = H5DataModule(data_path=data_path, add_features=False, batch_size=1).test_subset
-    model = Load(checkpoint_path=checkpoint, data_path=data_path, load_data=False).model
+def init_concept_probe(
+    checkpoint,
+    data_path,
+    loss_function,
+    message_passing_steps,
+    network_step,
+    gpu,
+    name,
+    out_path,
+):
+    if gpu:
+        device = "cuda"
+        total_devices = 1
+    else:
+        device = "cpu"
+        total_devices = 0
 
-    network = DynamicProbedNetwork(
-        model=model, data=subset, out_path=outdir,  rank=0, 
-            total_devices=1, epochs=0,  make_latent_rep=True, make_embedding_rep=True, 
-            feature_loss="tracks", network_target="encoder",  message_passing_steps=5
+    if name is None:
+        name = f"{loss_function}_{network_step}{message_passing_steps}"
+    loader = Load(checkpoint_path=checkpoint, data_path=data_path, load_data=True)
+    probe_engine = ConceptActivateVectors(
+        model=loader.model,
+        data=loader.data,
+        rank=device,
+        probe_name=name,
+        out_path=f"{out_path.rstrip('/')}/{name}",
+        total_devices=total_devices,
+        multicore=False,
+        loss_function=loss_function,
+    )
+    return probe_engine
+
+
+@cli.command("concept-probe")
+@click.option("-c", "--checkpoint")
+@click.option("-d", "--data-path")
+@click.option("-e", "--epochs", type=int, default=25)
+@click.option(
+    "-l",
+    "--loss-function",
+    type=click.Choice(
+        {"michel", "hipmip", "tracks", "michel_energy"}, case_sensitive=False
+    ),
+)
+@click.option("-s", "--network-step", type=click.Choice({"encoder", "message"}))
+@click.option("-m", "--message-passing-steps", type=int, default=1)
+@click.option("--gpu/--no-gpu", default=False)
+@click.option("-n", "--name", default=None)
+@click.option("-o", "--out-path", default="./results/concept_probe/")
+def train_probe(
+    checkpoint,
+    data_path,
+    epochs,
+    loss_function,
+    message_passing_steps,
+    network_step,
+    gpu,
+    name,
+    out_path,
+):
+    probe_engine = init_concept_probe(
+        checkpoint,
+        data_path,
+        loss_function,
+        message_passing_steps,
+        network_step,
+        gpu,
+        name,
+        out_path,
+    )
+    if network_step == "encoder":
+        probe_engine.train_encoder(epochs=epochs, test=False, overwrite=True)
+    else:
+        probe_engine.train_message(
+            epochs=epochs,
+            message_step=message_passing_steps,
+            test=False,
+            overwrite=True,
         )
-    network.network_clustering()
-    
-    for message_step in [1, 2, 3, 4, 5]: 
-        network = DynamicProbedNetwork(
-            model=model, data=subset, out_path=outdir,  rank=0, 
-                total_devices=1, epochs=0,  make_latent_rep=True, make_embedding_rep=True, 
-                feature_loss="tracks", network_target="message",  message_passing_steps=message_step
-            )
-        network.network_clustering()
 
 
-if __name__ == "__main__": 
-    internal_rep = False     
+@cli.command("visualize")
+@click.option("-p", "--path")
+@click.option("-t", "--title")
+@click.option("--baseline/--no-baseline", default=False)
+@click.option("-c", "--checkpoint")
+@click.option("-d", "--data-path")
+@click.option(
+    "-l",
+    "--loss-function",
+    type=click.Choice(
+        {"michel", "hipmip", "tracks", "michel_energy"}, case_sensitive=False
+    ),
+)
+@click.option("--gpu/--no-gpu", default=False)
+@click.option("--baseline-cutoff", default=25)
+def visualize(
+    path,
+    title,
+    make_baseline,
+    checkpoint,
+    data_path,
+    loss_function,
+    gpu,
+    baseline_cutoff,
+):
+    if make_baseline:
+        load = Load(checkpoint_path=checkpoint, data_path=data_path, batch_size=1200)
+        subset = load.data
+        device = "cuda" if gpu else "cpu"
+        loss = FeatureLoss(feature=loss_function, device=device)
 
-    if internal_rep: 
-        main_decomp()
+        running_loss = []
+        for data in subset:
+            load.model.step(data)
+            y_hat = data.collect("x_semantic")
+            y = data.collect("y_semantic")
+            loss_step = loss.loss(y_hat, y).item()
+            running_loss.append(loss_step)
+            if len(running_loss) >= baseline_cutoff:
+                continue
+        baseline = sum(running_loss) / len(running_loss)
+    else:
+        baseline = None
 
-    else: 
-        world_size = torch.cuda.device_count()
-        mp.spawn(main_probe, nprocs=world_size)
+    ConceptActivateVectors.visualize(
+        show=False, base_path=path, title=title, baseline=baseline
+    )
 
 
+@cli.command("kfold-probe")
+@click.option("-k", "--k-folds", type=int)
+@click.option("-c", "--checkpoint")
+@click.option("-d", "--data-path")
+@click.option("-e", "--epochs", type=int, default=25)
+@click.option(
+    "-l",
+    "--loss-function",
+    type=click.Choice(
+        {"michel", "hipmip", "tracks", "michel_energy"}, case_sensitive=False
+    ),
+)
+@click.option("-s", "--network-step", type=click.Choice({"encoder", "message"}))
+@click.option("-m", "--message-passing-steps", type=int, default=1)
+@click.option("--gpu/--no-gpu", is_flag=True)
+@click.option("-n", "--name", default=None)
+@click.option("-o", "--out-path", default="./results/concept_probe/")
+def kfold(
+    checkpoint,
+    data_path,
+    epochs,
+    loss_function,
+    message_passing_steps,
+    network_step,
+    gpu,
+    name,
+    out_path,
+    k_folds,
+):
+    probe_engine = init_concept_probe(
+        checkpoint,
+        data_path,
+        loss_function,
+        message_passing_steps,
+        network_step,
+        gpu,
+        name,
+        out_path,
+    )
+    if network_step == "encoder":
+        probe_engine.kfold_train(
+            embedding_function=probe_engine.encoder_in_func,
+            folds=k_folds,
+            epochs=epochs,
+        )
+    else:
+
+        def embedding(x):
+            probe_engine.message_in_function(x, message_passing_steps)
+
+        probe_engine.kfold_train(
+            embedding_function=embedding, folds=k_folds, epochs=epochs
+        )
+
+
+@cli.command("evaluate")
+def evaluate():
+    ""
+
+
+if __name__ == "__main__":
+    cli()
