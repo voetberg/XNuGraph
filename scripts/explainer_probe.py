@@ -190,7 +190,7 @@ def kfold(
     else:
 
         def embedding(x):
-            probe_engine.message_in_function(x, message_passing_steps)
+            return probe_engine.message_in_function(x, message_passing_steps)
 
         probe_engine.kfold_train(
             embedding_function=embedding, folds=k_folds, epochs=epochs

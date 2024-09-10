@@ -67,8 +67,8 @@ class ProbedNetwork:
         self.training_history = {}
         self.probe_name = probe_name
 
-        if not os.path.exists(os.path.dirname(self.out_path)):
-            os.makedirs(self.out_path)
+        if not os.path.exists(self.out_path):
+            os.makedirs(self.out_path, exist_ok=True)
 
     def encoder_in_func(self, x):
         x, _, _, _, _ = self.model.unpack_batch(x)
