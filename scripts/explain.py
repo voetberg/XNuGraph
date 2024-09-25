@@ -1,28 +1,18 @@
 from nugraph.explain_graph import (
     GlobalGNNExplain,
-    ClasswiseGNNExplain,
-    GNNExplainerPrune,
-    ExplainNetwork,
-    DynamicExplainNetwork,
-    GNNExplainerHits,
     GNNExplainerDifference,
     FilteredExplainEdges,
     FilteredExplainedHits,
+    GNNExplainerHits,
 )
 
-import os
-import argparse
 from datetime import datetime
 import torch
+import argparse
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-explainations = {
+explanations = {
     "Edges": GlobalGNNExplain,
-    "Probe": ExplainNetwork,
-    "ClassEdges": ClasswiseGNNExplain,
-    "DynamicProbe": DynamicExplainNetwork,
-    "Prune": GNNExplainerPrune,
     "Hits": GNNExplainerHits,
     "Difference": GNNExplainerDifference,
     "FilterEdge": FilteredExplainEdges,
@@ -43,7 +33,7 @@ def configure():
         "--algorithm",
         "-a",
         type=str,
-        choices=list(explainations.keys()),
+        choices=list(explanations.keys()),
         help="Name of the explaination algorithm",
         default="GNNExplainer",
     )
@@ -76,13 +66,13 @@ def configure():
         "-s",
         nargs="+",
         type=int,
-        help="Different message passing steps to use - runs an explaination for each",
+        help="Different message passing steps to use - runs an explanation for each",
         default=[5],
     )
     return parser.parse_args()
 
 
-def run_explaination(
+def run_explanation(
     checkpoint, algorithm, outfile, data_path, test, message_passing_steps
 ):
     file_name = str(datetime.now().timestamp())
@@ -93,7 +83,7 @@ def run_explaination(
         exp_outfile = f"{outfile.rstrip('/')}/{algorithm}_{n_steps}_steps/{file_name}/"
 
         torch.autograd.set_detect_anomaly(True)
-        explain = explainations[algorithm](
+        explain = explanations[algorithm](
             data_path=data_path,
             out_path=exp_outfile,
             message_passing_steps=n_steps,
@@ -111,7 +101,7 @@ def run_explaination(
 
 if __name__ == "__main__":
     args = configure()
-    run_explaination(
+    run_explanation(
         args.model,
         args.algorithm,
         args.outfile,

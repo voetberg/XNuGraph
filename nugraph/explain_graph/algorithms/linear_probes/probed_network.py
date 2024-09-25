@@ -10,8 +10,13 @@ from torch_geometric.loader import DataLoader
 from nugraph.explain_graph.algorithms.linear_probes.linear_decoder import (
     DynamicLinearDecoder,
 )
-from nugraph.explain_graph.algorithms.linear_probes.latent_representation import (
+from nugraph.explain_graph.algorithms.latent_representation import (
     LatentRepresentation,
+)
+from nugraph.explain_graph.utils.network_forward import (
+    encoder_forward,
+    message_forward,
+    decoder_forward,
 )
 
 from torch.utils.data.distributed import DistributedSampler
@@ -71,32 +76,13 @@ class ProbedNetwork:
             os.makedirs(self.out_path, exist_ok=True)
 
     def encoder_in_func(self, x):
-        x, _, _, _, _ = self.model.unpack_batch(x)
-        x = {plane: x[plane][:, : self.model.in_features] for plane in self.planes}
-        return self.model.encoder(x)
+        return encoder_forward(self.model, self.planes, x)
 
     def message_in_function(self, batch, message_passing_steps):
-        x, edge_index_plane, edge_index_nexus, nexus, _ = self.model.unpack_batch(batch)
-        x = {plane: x[plane][:, : self.model.in_features] for plane in self.planes}
-        m = self.model.encoder(x)
-
-        for _ in range(message_passing_steps):
-            # shortcut connect features
-            for p in self.planes:
-                s = x[p].detach().unsqueeze(1).expand(-1, m[p].size(1), -1)
-                m[p] = torch.cat((m[p], s), dim=-1)
-
-            self.model.plane_net(m, edge_index_plane)
-            self.model.nexus_net(m, edge_index_nexus, nexus)
-
-        return m
+        return message_forward(self.model, self.planes, batch, message_passing_steps)
 
     def decoder_in_func(self, x):
-        m = self.message_in_function(x, message_passing_steps=5)
-        _, _, _, _, batch = self.model.unpack_batch(x)
-
-        decoder_out = self.model.semantic_decoder(m, batch)["x_semantic"]
-        return decoder_out
+        return decoder_forward(self.model, self.planes, x)
 
     def make_probe(
         self,
