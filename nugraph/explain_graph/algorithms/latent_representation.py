@@ -197,6 +197,21 @@ class LatentRepresentation:
         self.title = title
 
         self.threshold = 0.02 if n_threshold is None else n_threshold
+        self.random = np.random.default_rng()
+
+    def subset(self, plane):
+        if not isinstance(self.threshold, int):
+            sample_threshold = int(
+                len(self.decomposition[self.planes[0]]) * self.threshold
+            )
+        else:
+            sample_threshold = self.threshold
+
+        sample_index = self.random.integers(
+            low=0, high=len(self.decomposition[plane]), size=sample_threshold
+        )
+
+        return self.decomposition[plane][sample_index], sample_index
 
     def decompose(self, clustering_decomp: bool = True):
         if clustering_decomp:
@@ -254,6 +269,32 @@ class LatentRepresentation:
 
         return decomposition
 
+    def color_map(self):
+        colors = [
+            "grey",
+            "darkorange",
+            "dodgerblue",
+            "limegreen",
+            "palevioletred",
+            "indigo",
+        ]
+        labels_classes = [
+            "Background",
+            "MIP",
+            "HIP",
+            "shower",
+            "michel",
+            "diffuse",
+        ]
+        color_map = {index: color for index, color in zip(labels_classes, colors)}
+        label_indices = [-1] + [i for i in range(len(labels_classes))]
+        index_map = {index: color for index, color in zip(label_indices, colors)}
+        handles = [
+            mpatches.Patch(color=color, label=label)
+            for label, color in color_map.items()
+        ]
+        return index_map, handles
+
     def cluster(self):
         try:
             clustering_algo = {
@@ -267,21 +308,13 @@ class LatentRepresentation:
         if self.decomposition is None:
             self.decomposition = self.decompose(clustering_decomp=True)
 
-        if not isinstance(self.threshold, int):
-            self.threshold = int(
-                len(self.decomposition[self.planes[0]]) * self.threshold
-            )
-
         self.clustering_labels = {}
         self.clustering_score = {}
         results = {}
         for plane in self.planes:
             clustering_algo.fit(self.decomposition[plane])
 
-            sample_index = np.random.default_rng().integers(
-                low=0, high=len(self.decomposition[plane]), size=self.threshold
-            )
-            samples = self.decomposition[plane][sample_index]
+            samples, sample_index = self.subset(plane)
             labels = clustering_algo.transform(samples)
 
             print(f"Computing Silhouette for {len(labels)} samples.....")
@@ -348,33 +381,7 @@ class LatentRepresentation:
                 )
 
             if n_columns == 3:
-                colors = [
-                    "grey",
-                    "darkorange",
-                    "dodgerblue",
-                    "limegreen",
-                    "palevioletred",
-                    "indigo",
-                ]
-                labels_classes = [
-                    "Background",
-                    "MIP",
-                    "HIP",
-                    "shower",
-                    "michel",
-                    "diffuse",
-                ]
-                color_map = {
-                    index: color for index, color in zip(labels_classes, colors)
-                }
-                label_indices = [-1] + [i for i in range(len(labels_classes))]
-                index_map = {
-                    index: color for index, color in zip(label_indices, colors)
-                }
-                handles = [
-                    mpatches.Patch(color=color, label=label)
-                    for label, color in color_map.items()
-                ]
+                index_map, handles = self.color_map()
 
                 subplots[subplot_index, 2].scatter(
                     self.decomposition[plane][:, 0],
@@ -414,42 +421,22 @@ class LatentRepresentation:
         )  # cluster by plane
         plt.setp(subplots, xticks=[], yticks=[])
 
-        colors = [
-            "grey",
-            "darkorange",
-            "dodgerblue",
-            "limegreen",
-            "palevioletred",
-            "indigo",
-        ]
-        labels_classes = [
-            "Background",
-            "MIP",
-            "HIP",
-            "shower",
-            "michel",
-            "diffuse",
-        ]
-        color_map = {index: color for index, color in zip(labels_classes, colors)}
-        label_indices = [-1] + [i for i in range(len(labels_classes))]
-        index_map = {index: color for index, color in zip(label_indices, colors)}
-        handles = [
-            mpatches.Patch(color=color, label=label)
-            for label, color in color_map.items()
-        ]
+        index_map, handles = self.color_map()
         subplots[0, 1].legend(handles=handles)
 
         position = 10
         for subplot_index, plane in enumerate(self.planes):
+            samples, sample_index = self.subset(plane)
+            labels = self.true_labels[plane][sample_index]
             plane_silhouette = silhouette_samples(
-                self.embedding[plane], self.true_labels[plane]
+                self.embedding[plane][sample_index], labels
             )
 
             subplots[subplot_index, 0].axvline(x=np.mean(plane_silhouette))
             subplots[subplot_index, 0].set_ylabel(plane)
 
             for label in set(self.true_labels[plane]):
-                scores = plane_silhouette[self.true_labels[plane] == label]
+                scores = plane_silhouette[labels == label]
                 scores.sort()
                 y_upper = position + scores.shape[0]
 
@@ -466,9 +453,9 @@ class LatentRepresentation:
                 position = y_upper + 10
 
             subplots[subplot_index, 1].scatter(
-                self.decomposition[plane][:, 0],
-                self.decomposition[plane][:, 1],
-                c=[index_map[label.item()] for label in self.true_labels[plane]],
+                samples[:, 0],
+                samples[:, 1],
+                c=[index_map[label.item()] for label in labels],
             )
 
         if self.title != "":
