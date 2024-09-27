@@ -95,7 +95,8 @@ class BatchedFit:
                 self.trained_transfrom[plane] = self.pca[plane]
 
     def transform(self):
-        batched_decomp = {plane: [] for plane in self.planes}
+        batched_decomp = defaultdict(list)
+        batched_embedding = defaultdict(list)
         for plane in self.planes:
             for batch in tqdm(self.loader, desc=f"Transforming Plane {plane}..."):
                 embedding = self.embedding_function(batch)
@@ -111,17 +112,13 @@ class BatchedFit:
                     .cpu()
                 )
                 decomp = self.pca[plane].transform(ravelled)
-                if self.transform_function is not None:
-                    batched_decomp[plane].append(
-                        self.trained_transfrom[plane].transform(decomp)
-                    )
-
-                else:
-                    batched_decomp[plane].append(decomp)
+                batched_decomp[plane].append(decomp)
+                batched_embedding[plane].append(ravelled)
 
             batched_decomp[plane] = np.concatenate(batched_decomp[plane])
+            batched_embedding[plane] = np.concatenate(batched_embedding[plane])
 
-        return batched_decomp
+        return batched_decomp, batched_embedding
 
 
 class BatchedClustering:
@@ -236,19 +233,25 @@ class LatentRepresentation:
         )
 
         fit.fit()
-        decomposition = fit.transform()
+        decomposition, embedding = fit.transform()
 
         results = {
             "decomposition": {
                 key: decomp.tolist() for key, decomp in decomposition.items()
-            }
+            },
+            "embedding": {
+                key: embedding.tolist() for key, embedding in embedding.items()
+            },
         }
+
         with open(
             f"{self.out_path.strip('/')}/{self.plot_name}_decomposition.json", "w"
         ) as f:
             json.dump(results, f)
 
         self.decomposition = decomposition
+        self.embedding = embedding
+
         return decomposition
 
     def cluster(self):
@@ -393,8 +396,10 @@ class LatentRepresentation:
         plt.close()
 
     def visualize_label_silhouette(self):
-        if self.decomposition is None:
-            raise ValueError("No decomposition present, run self.decomposition")
+        if (self.decomposition is None) or (self.embedding is None):
+            raise ValueError(
+                "No decomposition or embedding present, run self.decomposition"
+            )
 
         if self.true_labels is None:
             self.true_labels = defaultdict(list)
@@ -437,7 +442,7 @@ class LatentRepresentation:
         position = 10
         for subplot_index, plane in enumerate(self.planes):
             plane_silhouette = silhouette_samples(
-                self.decomposition[plane], self.true_labels[plane]
+                self.embedding[plane], self.true_labels[plane]
             )
 
             subplots[subplot_index, 0].axvline(x=np.mean(plane_silhouette))
@@ -454,6 +459,7 @@ class LatentRepresentation:
                     0,
                     scores,
                     alpha=0.7,
+                    color=index_map[label],
                 )
 
                 # Move the index up
