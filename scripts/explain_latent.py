@@ -1,9 +1,11 @@
 import click
+import os
+
+from torch_geometric.loader import DataLoader
 
 from nugraph.explain_graph.algorithms.latent_representation import (
     LatentRepresentation,
 )
-from torch_geometric.loader import DataLoader
 from nugraph.explain_graph.utils import Load, network_forward
 
 
@@ -39,6 +41,8 @@ def cli(ctx, checkpoint, data_path, out_path, plot_title, gpu):
             self.device = "cuda" if gpu else "cpu"
 
     ctx.obj = config(checkpoint, data_path, out_path, plot_title, gpu)
+    if not os.path.exists(out_path):
+        os.makedirs(out_path)
 
 
 @cli.command("cluster")
