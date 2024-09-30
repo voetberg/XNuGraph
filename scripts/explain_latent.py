@@ -81,8 +81,9 @@ def cluster(ctx, network_step, message_passing_steps):
     "-s", "--network-step", type=click.Choice({"message", "encoder", "decoder"})
 )
 @click.option("-m", "--message-passing-steps", default=0)
+@click.option("-t", "--data-threshold", default=None)
 @click.pass_context
-def decompose(ctx, network_step, message_passing_steps):
+def decompose(ctx, network_step, message_passing_steps, threshold):
     # Do the latent decomposition and do not cluster the output
     name = f"{network_step}_{message_passing_steps}_clustering"
     data = DataLoader(ctx.obj.load.data, shuffle=True)
@@ -98,7 +99,7 @@ def decompose(ctx, network_step, message_passing_steps):
         title=ctx.obj.plot_title,
         batched_fit=True,
         batched_cluster=True,
-        n_threshold=None,
+        n_threshold=threshold,
     )
     rep.decompose()
     rep.visualize_label_silhouette()

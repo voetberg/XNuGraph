@@ -408,14 +408,6 @@ class LatentRepresentation:
                 "No decomposition or embedding present, run self.decomposition"
             )
 
-        if self.true_labels is None:
-            self.true_labels = defaultdict(list)
-            for plane in self.planes:
-                self.true_labels[plane] += [
-                    graph[plane]["y_semantic"].tolist() for graph in self.data_loader
-                ]
-                self.true_labels[plane] = np.array(self.true_labels[plane]).ravel()
-
         figure, subplots = plt.subplots(
             len(self.planes), 2, figsize=(8, 5 * len(self.planes))
         )  # cluster by plane
@@ -427,7 +419,9 @@ class LatentRepresentation:
         position = 10
         for subplot_index, plane in enumerate(self.planes):
             samples, sample_index = self.subset(plane)
-            labels = self.true_labels[plane][sample_index]
+            labels = np.array(
+                [graph[plane]["y_semantic"].tolist() for graph in self.data_loader]
+            ).ravel()[sample_index]
             plane_silhouette = silhouette_samples(
                 self.embedding[plane][sample_index], labels
             )
