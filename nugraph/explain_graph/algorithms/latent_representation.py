@@ -59,7 +59,7 @@ class BatchedFit:
 
             self.pca[plane] = pca
 
-    def transform(self, n_samples):
+    def transform(self):
         batched_decomp = defaultdict(list)
         batched_embedding = defaultdict(list)
 
