@@ -59,46 +59,17 @@ class BatchedFit:
 
             self.pca[plane] = pca
 
-            # Then fit the actual transform
-            if self.transform_function is not None:
-                decomp = []
-                for batch_index, batch in enumerate(
-                    tqdm(
-                        self.loader, desc=f"Training Decomposition for Plane {plane}..."
-                    )
-                ):
-                    if batch_index > 0.25 * len(self.loader):
-                        continue
-                    embedding = self.embedding_function(batch)
-
-                    ravelled = (
-                        embedding[plane]
-                        .reshape(
-                            (
-                                embedding[plane].shape[0],
-                                embedding[plane].shape[1] * embedding[plane].shape[2],
-                            )
-                        )
-                        .detach()
-                        .cpu()
-                    )
-
-                    decomp.append(
-                        self.pca[plane].transform(ravelled).astype(np.float16)
-                    )
-
-                self.trained_transfrom[plane] = self.transform_function.fit(
-                    np.concatenate(decomp)
-                )
-
-            else:
-                self.trained_transfrom[plane] = self.pca[plane]
-
-    def transform(self):
+    def transform(self, n_samples):
         batched_decomp = defaultdict(list)
         batched_embedding = defaultdict(list)
+
         for plane in self.planes:
-            for batch in tqdm(self.loader, desc=f"Transforming Plane {plane}..."):
+            for batch_index, batch in enumerate(
+                tqdm(self.loader, desc=f"Transforming PCA for Plane {plane}...")
+            ):
+                if batch_index > 0.25 * len(self.loader):
+                    continue
+
                 embedding = self.embedding_function(batch)
                 ravelled = (
                     embedding[plane]
