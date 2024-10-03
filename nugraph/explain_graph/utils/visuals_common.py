@@ -1,4 +1,5 @@
 import networkx as nx
+import numpy as np
 import torch
 
 import matplotlib.colors as colors
@@ -64,7 +65,7 @@ def extract_edge_weights(graph, plane, return_value=False, cmap="viridis", nexus
     weights = [1 for _ in range(len(graph[(plane, "plane", plane)]))]
     from_graph = False
 
-    weight_colors = "cornflowerblue"
+    weight_colors = "grey"
 
     # edge_attr is more acturate for picking mask shapes
     if not nexus:
@@ -93,14 +94,21 @@ def extract_edge_weights(graph, plane, return_value=False, cmap="viridis", nexus
     return weight_colors
 
 
-def extract_node_weights(graph, plane, node_field="node_mask", scale=True):
+def extract_node_weights(
+    graph, plane, nodes, node_field="node_mask", scale=True, color=False, cmap="viridis"
+):
     if node_field in graph[plane].keys():
-        node_size = graph[plane][node_field]
+        node_size = np.array([graph[plane][node_field][node] for node in nodes])
         if scale:
             node_size = (
-                (node_size - node_size.min()) / (node_size.max() - node_size.min()) * 20
+                (node_size - node_size.min()) / (node_size.max() - node_size.min()) * 30
             )
-            node_size = node_size.ravel().tolist()
+            node_size = node_size.ravel()
+            if color:
+                cNorm = colors.Normalize(vmin=0, vmax=node_size.max())
+                color_map = cmx.ScalarMappable(norm=cNorm, cmap=plt.get_cmap(cmap))
+                weight_colors = [color_map.to_rgba(weight) for weight in node_size]
+                return weight_colors
 
     else:
         node_size = [2 for _ in range(len(graph[plane]["x"]))]

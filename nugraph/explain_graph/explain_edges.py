@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import Iterable
 from pynuml import io
 
@@ -17,9 +18,7 @@ from nugraph.explain_graph.algorithms.hetero_gnnexplainer import (
 from nugraph.explain_graph.algorithms.class_hetero_gnnexplainer import (
     MultiEdgeHeteroGNNExplainer,
 )
-from nugraph.explain_graph.algorithms.prune_gnn_explainer import (
-    NonTrainedHeteroGNNExplainer,
-)
+
 from nugraph.explain_graph.utils.masking_utils import get_masked_graph, MaskStrats
 from nugraph.explain_graph.utils.edge_visuals import (
     EdgeLengthDistribution,
@@ -63,7 +62,7 @@ class GlobalGNNExplain(ExplainLocal):
             algorithm=HeteroGNNExplainer(epochs=self.n_epochs, plane=self.planes),
             explanation_type="model",
             model_config=model_config,
-            node_mask_type="object",
+            node_mask_type=None,
             edge_mask_type="object",
         )
 
@@ -225,57 +224,6 @@ class ClasswiseGNNExplain(GlobalGNNExplain):
         return metrics
 
 
-class GNNExplainerPrune(GlobalGNNExplain):
-    def __init__(
-        self,
-        data_path: str,
-        out_path: str = "explainations/",
-        checkpoint_path: str = None,
-        batch_size: int = 16,
-        test: bool = False,
-        planes=["u", "v", "y"],
-        n_batches=None,
-        message_passing_steps=5,
-        n_epochs=200,
-    ):
-        super().__init__(
-            data_path,
-            out_path,
-            checkpoint_path,
-            batch_size,
-            test,
-            planes,
-            n_batches,
-            message_passing_steps=message_passing_steps,
-            n_epochs=n_epochs,
-        )
-        model_config = ModelConfig(
-            mode="multiclass_classification", task_level="node", return_type="raw"
-        )
-
-        self.explainer = HeteroExplainer(
-            model=self.model,
-            algorithm=NonTrainedHeteroGNNExplainer(
-                epochs=self.n_epochs, plane=self.planes
-            ),
-            explanation_type="model",
-            model_config=model_config,
-            node_mask_type="object",
-        )
-
-    def explain(self, data):
-        explaination = self.explainer(graph=data)
-        return explaination
-
-    def get_explanation_subgraph(self, explaination):
-        edge_mask = explaination["edge_mask"]
-        masked_graph = get_masked_graph(
-            explaination["graph"], edge_mask=edge_mask, planes=self.planes
-        )
-        masked_graph["edge_mask"] = edge_mask
-        return masked_graph
-
-
 class FilteredExplainEdges(GlobalGNNExplain):
     def __init__(
         self,
@@ -288,8 +236,6 @@ class FilteredExplainEdges(GlobalGNNExplain):
         n_batches=None,
         message_passing_steps=5,
         n_epochs=200,
-        node_filter=True,
-        background_filter=False,
     ):
         super().__init__(
             data_path,
@@ -303,68 +249,81 @@ class FilteredExplainEdges(GlobalGNNExplain):
             n_epochs,
         )
 
-        self.background_filter = background_filter
-        self.node_filter = node_filter
         self.classes = ("MIP", "HIP", "shower", "michel", "diffuse")
+        self.explanations = defaultdict(dict)
+        self.metrics = defaultdict(dict)
 
     def filter_graph(self, graph):
-        if self.background_filter:
-            mask = {
-                plane: torch.logical_not(
-                    torch.isin(graph.collect("y_semantic")[plane], torch.tensor([-1]))
-                )
-                for plane in ["u", "v", "y"]
-            }
+        predictions = self.model(*self.load.unpack(graph))
 
-        else:
-            mask = {
-                plane: torch.logical_not(
-                    torch.isin(
-                        graph.collect("y_semantic")[plane], torch.tensor([-1, 2, 4])
-                    )
-                )
-                for plane in ["u", "v", "y"]
-            }
+        predictions = {
+            p: torch.argmax(predictions["x_semantic"][p], axis=-1).to(int)
+            for p in self.planes
+        }
+        labels = graph.collect("y_semantic")
 
-        return get_masked_graph(
-            graph,
-            node_mask=mask,
-            planes=self.planes,
-            mask_strategy=self.masking_strat,
-        )
+        correct = {
+            plane: [
+                id
+                for id, label in enumerate(labels[plane])
+                if (predictions[plane][id] == label and label != -1)
+            ]
+            for plane in self.planes
+        }
+
+        incorrect = {
+            plane: [
+                id
+                for id, label in enumerate(labels[plane])
+                if (predictions[plane][id] != label and label != -1)
+            ]
+            for plane in self.planes
+        }
+
+        return {"correct": correct, "incorrect": incorrect}
 
     def visualize(self, explaination, file_name=None, *args, **kwargs):
-        subgraph_masked = [self.get_explanation_subgraph(g) for g in explaination]
         edge_length_plotter = EdgeLengthDistribution(
             out_path=self.out_path,
             include_nexus=False,
             planes=self.planes,
-            semantic_classes=self.classes,
+            semantic_classes=("correct", "incorrect"),
+        )
+        edge_plotter = EdgeVisuals(
+            planes=self.planes, semantic_classes=("correct", "incorrect")
         )
 
-        edge_length_plotter.plot(
-            graph=subgraph_masked,
-            style="scatter",
-            split="all",
-            file_name=f"{file_name}_length_corr.png",
-        )
+        for index, graph in explaination.items():
+            subgraph_masked = {
+                key: self.get_explanation_subgraph(g) for key, g in graph.items()
+            }
+            file_name = (
+                f"{file_name}_{index}"
+                if file_name is not None
+                else f"filtered_event_{index}"
+            )
 
-        edge_length_plotter.plot(
-            graph=subgraph_masked,
-            style="histogram",
-            split="all",
-            file_name=f"{file_name}_length_dist.png",
-        )
+            for name, subgraph in subgraph_masked.items():
+                edge_plotter.plot(
+                    subgraph,
+                    outdir=self.out_path,
+                    class_plot=False,
+                    file_name=f"{file_name}_{name}.png",
+                )
 
-    def single_visual(self, explain, index):
-        subgraph = self.get_explanation_subgraph(explain)
-        EdgeVisuals(planes=self.planes).plot(
-            graph=subgraph,
-            ghost_plot=explain,
-            outdir=self.out_path,
-            file_name=f"subgraph_{index}.png",
-            nexus_distribution=True,
-        )
+            edge_length_plotter.plot(
+                graph=list(subgraph_masked.values()),
+                style="scatter",
+                split="all",
+                file_name=f"{file_name}_length_corr.png",
+            )
+
+            edge_length_plotter.plot(
+                graph=list(subgraph_masked.values()),
+                style="histogram",
+                split="all",
+                file_name=f"{file_name}_length_dist.png",
+            )
 
     def explain(self, data):
         try:
@@ -372,30 +331,17 @@ class FilteredExplainEdges(GlobalGNNExplain):
         except Exception:
             data = [data]
 
-        if self.load.test:
+        if True:
             data = [data[0]]
 
         for graph_index, graph in enumerate(data):
-            EdgeVisuals(planes=self.planes).event_plot(
-                graph=graph,
-                outdir=self.out_path,
-                file_name=f"event_{graph_index}.png",
-            )
+            filtered = self.filter_graph(graph)
+            for concept, nodes in filtered.items():
+                explaination = self.explainer(graph=graph, nodes=nodes)
 
-            filtered_graph = self.filter_graph(graph=graph)
+                self.metrics[graph_index][concept] = self.calculate_metrics(
+                    explaination
+                )
+                self.explanations[graph_index][concept] = explaination
 
-            self.model(*self.load.unpack(filtered_graph))
-            EdgeVisuals(planes=self.planes).event_plot(
-                graph=filtered_graph,
-                outdir=self.out_path,
-                file_name=f"event_filtered_all_remote_{graph_index}.png",
-            )
-
-            # explaination = self.explainer(graph=filtered_graph)
-            # self.single_visual(explaination, graph_index)
-            # metrics = self.calculate_metrics(explaination)
-            # self.metrics[str(len(self.metrics))] = metrics
-
-            # self.explainations.append(explaination)
-
-        return self.explainations
+        return self.explanations

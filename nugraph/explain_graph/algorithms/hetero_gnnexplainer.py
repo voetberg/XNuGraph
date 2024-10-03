@@ -285,12 +285,12 @@ class HeteroGNNExplainer(GNNExplainer):
                 y_hat = torch.concat([y_hat[key] for key in y.keys()])
                 y_compare_true = torch.concat([y_true[key] for key in y.keys()])
 
-            loss = self._loss(y_hat, y_compare)
+            loss = self._loss(y_compare, y_compare_true)
             self.loss_history.append(loss.item())
             loss.backward(retain_graph=True)
             optimizer.step()
 
-            recall_loss = RecallLoss(ignore_index=-1)(y_hat, y_compare_true)
+            recall_loss = RecallLoss(ignore_index=-1)(y_compare, y_compare_true)
             self.recall_loss_history.append(recall_loss.item())
 
             # In the first iteration, we collect the nodes and edges that are

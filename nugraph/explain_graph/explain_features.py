@@ -1,6 +1,4 @@
 import copy
-import os
-import json
 from torch_geometric.explain import ModelConfig
 import torch
 from nugraph.explain_graph.algorithms.hetero_gnnexplainer import (
@@ -10,7 +8,7 @@ from nugraph.explain_graph.algorithms.hetero_gnnexplainer import (
 
 from nugraph.explain_graph.explain_edges import GlobalGNNExplain
 from nugraph.explain_graph.utils.node_visuals import NodeVisuals
-from nugraph.explain_graph.utils.edge_visuals import EdgeVisuals, EdgeLengthDistribution
+from nugraph.explain_graph.utils.edge_visuals import EdgeVisuals
 from nugraph.explain_graph.utils import get_masked_graph, MaskStrats
 
 
@@ -18,7 +16,8 @@ class GNNExplainerHits(GlobalGNNExplain):
     def __init__(
         self,
         data_path: str,
-        out_path: str = "explainations/",
+        out_path: str = "explanations/",
+        node_attribution: bool = False,
         checkpoint_path: str = None,
         batch_size: int = 16,
         test: bool = False,
@@ -38,10 +37,6 @@ class GNNExplainerHits(GlobalGNNExplain):
             n_epochs=n_epochs,
         )
 
-        index_list_file = f"{data_path.rstrip('.h5')}.json"
-        assert os.path.exists(index_list_file)
-        self.node_list = json.load(open(index_list_file))
-
         model_config = ModelConfig(
             mode="multiclass_classification", task_level="node", return_type="raw"
         )
@@ -52,20 +47,18 @@ class GNNExplainerHits(GlobalGNNExplain):
                 epochs=self.n_epochs,
                 single_plane=False,
                 plane=self.planes,
-                nexus=True,
+                nexus=False,
                 nan_mask=True,
             ),
             explanation_type="model",
             model_config=model_config,
-            node_mask_type="attributes",
-            edge_mask_type="object",
+            node_mask_type="attributes" if node_attribution else "object",
+            edge_mask_type=None,
         )
-        self.explainations = {}
+        self.explanations = {}
         self.classes = ["correct", "incorrect"]
         self.feature_names = feature_names
-        self.criterion = (
-            "hip_criteron" if "hip" in self.load.data_path else "michel_criteon"
-        )
+        self.node_attribution = node_attribution
 
     def explain(self, data):
         try:
@@ -73,63 +66,80 @@ class GNNExplainerHits(GlobalGNNExplain):
         except Exception:
             data = [data]
 
-        indices = self.node_list.keys()
-        if self.load.test:
-            indices = [list(indices)[0]]
+        test = True
+        if test:
+            data = [data[0]]
 
-        graph_indices = range(len(indices))
-        for graph_index, nodes, index in zip(
-            graph_indices, self.node_list.values(), indices
-        ):
+        for index, graph in enumerate(data):
             single_graph = {}
             self.metrics[index] = {}
-            correct = nodes[self.criterion]["correct_hits"]
-            incorrect = nodes[self.criterion]["incorrect_hits"]
+
+            predictions = self.model(*self.load.unpack(graph))
+
+            predictions = {
+                p: torch.argmax(predictions["x_semantic"][p], axis=-1).to(int)
+                for p in self.planes
+            }
+            labels = graph.collect("y_semantic")
+
+            correct = {
+                plane: [
+                    id
+                    for id, label in enumerate(labels[plane])
+                    if (predictions[plane][id] == label and label != -1)
+                ]
+                for plane in self.planes
+            }
+            incorrect = {
+                plane: [
+                    id
+                    for id, label in enumerate(labels[plane])
+                    if (predictions[plane][id] != label and label != -1)
+                ]
+                for plane in self.planes
+            }
 
             for name, active_nodes in zip(
                 ["correct", "incorrect"], [correct, incorrect]
             ):
                 if sum([len(active_nodes[plane]) for plane in self.planes]) != 0:
-                    explain_graph = copy.deepcopy(data[graph_index])
-                    explaination = self.explainer(
+                    explain_graph = copy.deepcopy(graph)
+                    explanations = self.explainer(
                         graph=explain_graph, nodes=active_nodes
                     )
-                    metrics = self.calculate_metrics(explaination)
+                    metrics = self.calculate_metrics(explanations)
 
-                    single_graph[name] = explaination
+                    single_graph[name] = explanations
                     self.metrics[index][name] = metrics
 
-            self.explainations[index] = single_graph
-        return self.explainations
+            self.explanations[index] = single_graph
+        return self.explanations
 
-    def get_explanation_subgraph(self, explaination):
-        edge_mask = explaination.collect("edge_mask")
-        node_mask = explaination.collect("node_mask")
+    def get_explanation_subgraph(self, explanation):
+        node_mask = explanation.collect("node_mask")
         return get_masked_graph(
-            explaination,
-            edge_mask=edge_mask,
+            explanation,
+            edge_mask=None,
             node_mask=node_mask,
             planes=self.planes,
             mask_strategy=MaskStrats.top_quartile,
             make_nodes_nan=True,
         )
 
-    def visualize(self, explaination, *args, **kwargs):
+    def visualize(self, explanation, *args, **kwargs):
+        if self.node_attribution:
+            features = self.feature_names
+        else:
+            features = self.classes
         node_plotter = NodeVisuals(
             self.out_path,
             planes=self.planes,
             semantic_classes=self.classes,
-            feature_names=self.feature_names,
+            feature_names=features,
         )
         edge_plotter = EdgeVisuals(planes=self.planes, semantic_classes=self.classes)
-        edge_length_plotter = EdgeLengthDistribution(
-            out_path=self.out_path,
-            include_nexus=False,
-            planes=self.planes,
-            semantic_classes=self.classes,
-        )
 
-        for index, explain in explaination.items():
+        for index, explain in explanation.items():
             ghost_plot = None
             file_name = f"{index}"
             if "correct" in explain.keys():
@@ -139,44 +149,49 @@ class GNNExplainerHits(GlobalGNNExplain):
                 ghost_plot = explain["incorrect"]
 
             subgraphs = [subgraph_mask for subgraph_mask in explain.values()]
-            subgraph_masked = [self.get_explanation_subgraph(g) for g in subgraphs]
+            subgraph_masked = {
+                c: self.get_explanation_subgraph(g) for c, g in explain.items()
+            }
 
             if len(subgraphs) != 0:
-                edge_plotter.plot(
-                    graph=subgraph_masked,
-                    ghost_plot=ghost_plot,
-                    outdir=self.out_path,
-                    file_name=f"filter_subgraphs_{file_name}.png",
-                    title=f"{self.criterion} Score: {round(self.node_list[index][self.criterion]['num_correct'], 4)}",
-                    nexus_distribution=True,
-                    class_plot=True,
-                )
+                if not self.node_attribution:
+                    edge_plotter.plot(
+                        graph=subgraph_masked,
+                        ghost_plot=ghost_plot,
+                        outdir=self.out_path,
+                        file_name=f"filter_subgraphs_{file_name}.png",
+                        title="",
+                        nexus_distribution=False,
+                        class_plot=True,
+                    )
+                    node_plotter.plot(
+                        style="hist2d",
+                        graph=explain,
+                        split="plane",
+                        file_name=f"{file_name}_histd2_plane.png",
+                    )
+                else:
+                    for name, e in explain.items():
+                        mask = e.collect("node_mask")
+                        n_features = mask[self.planes[0]].shape[1]
+                        items = {}
+                        for feature in range(n_features):
+                            for plane in self.planes:
+                                e[plane]["node_mask"] = mask[plane][:, feature]
+                            items[feature + 1] = e
+
+                        node_plotter.plot(
+                            style="hist2d",
+                            graph=items,
+                            split="plane",
+                            file_name=f"{file_name}_{name}_histd2_plane.png",
+                        )
 
                 node_plotter.plot(
                     style="hist",
-                    graph=subgraphs,
+                    graph=explain,
                     split="plane",
                     file_name=f"{file_name}_histogram.png",
-                )
-
-                node_plotter.plot(
-                    style="hist2d",
-                    graph=subgraphs,
-                    split="plane",
-                    file_name=f"{file_name}_histd2_plane.png",
-                )
-                edge_length_plotter.plot(
-                    graph=subgraphs,
-                    style="scatter",
-                    split="all",
-                    file_name=f"{file_name}_length_corr.png",
-                )
-
-                edge_length_plotter.plot(
-                    graph=subgraphs,
-                    style="histogram",
-                    split="all",
-                    file_name=f"{file_name}_length_dist.png",
                 )
 
 
@@ -184,7 +199,7 @@ class FilteredExplainedHits(GNNExplainerHits):
     def __init__(
         self,
         data_path: str,
-        out_path: str = "explainations/",
+        out_path: str = "explanations/",
         checkpoint_path: str = None,
         batch_size: int = 16,
         test: bool = False,
@@ -236,7 +251,7 @@ class FilteredExplainedHits(GNNExplainerHits):
             mask_strategy=self.masking_strat,
         )
 
-    def visualize(self, explaination, file_name=None, *args, **kwargs):
+    def visualize(self, explanation, file_name=None, *args, **kwargs):
         node_plotter = NodeVisuals(
             self.out_path,
             planes=self.planes,
@@ -244,7 +259,7 @@ class FilteredExplainedHits(GNNExplainerHits):
             feature_names=self.feature_names,
         )
 
-        subgraphs = [subgraph_mask for subgraph_mask in explaination.values()]
+        subgraphs = [subgraph_mask for subgraph_mask in explanation.values()]
         subgraph_masked = [self.get_explanation_subgraph(g) for g in subgraphs]
 
         if len(subgraphs) != 0:
@@ -281,12 +296,12 @@ class FilteredExplainedHits(GNNExplainerHits):
 
         for graph_index, graph in enumerate(data):
             filtered_graph = self.filter_graph(graph=graph)
-            explaination = self.explainer(graph=filtered_graph)
+            explanation = self.explainer(graph=filtered_graph)
 
-            self.single_visual(explaination, graph_index)
-            metrics = self.calculate_metrics(explaination)
+            self.single_visual(explanation, graph_index)
+            metrics = self.calculate_metrics(explanation)
             self.metrics[str(len(self.metrics))] = metrics
 
-            self.explainations.append(explaination)
+            self.explanations.append(explanation)
 
-        return self.explainations
+        return self.explanations

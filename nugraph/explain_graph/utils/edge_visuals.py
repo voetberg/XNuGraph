@@ -36,13 +36,23 @@ class EdgeVisuals:
     def plot_graph(self, graph, subgraph, plane, axes):
         nodes = subgraph.nodes
         try:
-            position = {node: graph[plane]["pos"][node].tolist() for node in nodes}
+            position = {node: graph[plane]["pos"][node].tolist() for node in set(nodes)}
         except IndexError:  # If the nodes are given as tensors
             position = {
-                node: graph[plane]["pos"][int(node.item())].tolist() for node in nodes
+                node: graph[plane]["pos"][int(node.item())].tolist()
+                for node in set(nodes)
             }
         node_list = list(subgraph)
         weight_colors = extract_edge_weights(graph, plane)
+        width = 5
+        node_size = 2
+        node_color = "black"
+        if isinstance(weight_colors, str):
+            width = 1
+            node_size = 10
+            node_color = extract_node_weights(
+                graph, plane, nodes, scale=True, color=True
+            )
         edge_list = subgraph.edges(node_list)
 
         drawn_plot = nx.draw_networkx(
@@ -51,9 +61,9 @@ class EdgeVisuals:
             with_labels=False,
             nodelist=node_list,
             edgelist=edge_list,
-            width=5,
-            node_color="black",
-            node_size=2,
+            width=width,
+            node_color=node_color,
+            node_size=node_size,
             edge_color=weight_colors,
             ax=axes,
         )
@@ -184,11 +194,11 @@ class EdgeVisuals:
     ):
         if ghost_plot is None:
             ghost_plot = deepcopy(graph)
-        if not isinstance(graph, list):
-            graph = [
-                extract_class_subgraphs(graph, self.planes, class_index)
-                for class_index in range(len(self.semantic_classes))
-            ]
+        if not isinstance(graph, dict):
+            graph = {
+                semantic_class: extract_class_subgraphs(graph, self.planes, class_index)
+                for class_index, semantic_class in enumerate(self.semantic_classes)
+            }
 
         for class_index, class_label in enumerate(self.semantic_classes):
             subplot_row = subplots[class_index, :]
@@ -198,7 +208,7 @@ class EdgeVisuals:
             else:
                 class_hits = None
             try:
-                class_graph = graph[class_index]
+                class_graph = graph[class_label]
                 self._single_plot(
                     class_graph,
                     ghost_plot,
@@ -206,7 +216,7 @@ class EdgeVisuals:
                     nexus_distribution=nexus_distribution,
                     key_hits=class_hits,
                 )
-            except IndexError:
+            except (IndexError, KeyError):
                 pass
 
     def event_plot(
