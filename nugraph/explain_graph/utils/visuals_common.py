@@ -2,6 +2,7 @@ import networkx as nx
 import numpy as np
 import torch
 
+from matplotlib.lines import Line2D
 import matplotlib.colors as colors
 import matplotlib.cm as cmx
 import matplotlib.pyplot as plt
@@ -124,3 +125,37 @@ def extract_class_subgraphs(graph, planes, class_index):
 
     subgraph = graph.subgraph(nodes)
     return subgraph
+
+
+def color_map():
+    colors = [
+        "#bbbbbb",
+        "#ee7733",
+        "#0077bb",
+        "#009988",
+        "#cc3311",
+        "#ee3377",
+    ]
+    labels_classes = [
+        "Background",
+        "MIP",
+        "HIP",
+        "shower",
+        "michel",
+        "diffuse",
+    ]
+    markers = [".", "v", "s", "P", "D", "*"]
+    color_map = {
+        index: (color, marker)
+        for index, color, marker in zip(labels_classes, colors, markers)
+    }
+    label_indices = [-1] + [i for i in range(len(labels_classes))]
+    index_map = {
+        index: (color, marker)
+        for index, color, marker in zip(label_indices, colors, markers)
+    }
+    handles = [
+        Line2D([], [], marker=item[1], color=item[0], label=label, linestyle="None")
+        for label, item in color_map.items()
+    ]
+    return index_map, handles

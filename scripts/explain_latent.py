@@ -24,56 +24,29 @@ def embed(network_step, message_steps, model):
 @click.option("-d", "--data-path", default="./test_data/test_data.h5")
 @click.option("-o", "--out-path", default="./test/")
 @click.option("-t", "--plot-title", default="")
+@click.option("--test/--no-test", default=False)
 @click.option("--gpu/--no-gpu")
 @click.pass_context
-def cli(ctx, checkpoint, data_path, out_path, plot_title, gpu):
+def cli(ctx, checkpoint, data_path, out_path, plot_title, test, gpu):
     class config(object):
-        def __init__(self, checkpoint, data_path, out_path, plot_title, gpu) -> None:
+        def __init__(
+            self, checkpoint, data_path, out_path, plot_title, test, gpu
+        ) -> None:
             self.out_path = out_path
             self.load = Load(
                 checkpoint_path=checkpoint,
                 data_path=data_path,
                 load_data=True,
                 load_model=True,
+                test=test,
                 auto_load=True,
             )
             self.plot_title = plot_title
             self.device = "cuda" if gpu else "cpu"
 
-    ctx.obj = config(checkpoint, data_path, out_path, plot_title, gpu)
+    ctx.obj = config(checkpoint, data_path, out_path, plot_title, test, gpu)
     if not os.path.exists(out_path):
         os.makedirs(out_path)
-
-
-@cli.command("cluster")
-@click.pass_context
-@click.option(
-    "-s", "--network-step", type=click.Choice({"message", "encoder", "decoder"})
-)
-@click.option("-m", "--message-passing-steps")
-def cluster(ctx, network_step, message_passing_steps):
-    # Do the latent decomposition and cluster the output
-    name = f"{network_step}_{message_passing_steps}_clustering"
-    LatentRepresentation(
-        embedding_function=embed(
-            network_step=network_step,
-            message_steps=message_passing_steps,
-            model=ctx.model,
-            device=ctx.device,
-        ),
-        data_loader=ctx.data,
-        out_path=ctx.out_path,
-        name=name,
-        title=ctx.plot_title,
-        batched_fit=True,
-        batched_cluster=True,
-        n_visual_dim=2,
-        n_clusters=5,
-        clustering_components=2,
-        decomposition_algorithm="kmeans",
-        clustering_algorithm="batched_kmeans",
-        n_threshold=None,
-    )()
 
 
 @cli.command("decompose")
@@ -81,7 +54,7 @@ def cluster(ctx, network_step, message_passing_steps):
     "-s", "--network-step", type=click.Choice({"message", "encoder", "decoder"})
 )
 @click.option("-m", "--message-passing-steps", default=0)
-@click.option("-t", "--data-threshold", default=None)
+@click.option("-t", "--data-threshold", default=None, type=float)
 @click.pass_context
 def decompose(ctx, network_step, message_passing_steps, data_threshold):
     # Do the latent decomposition and do not cluster the output
@@ -97,12 +70,12 @@ def decompose(ctx, network_step, message_passing_steps, data_threshold):
         out_path=ctx.obj.out_path,
         name=name,
         title=ctx.obj.plot_title,
-        batched_fit=True,
-        batched_cluster=True,
+        batched_fit=False,
         n_threshold=data_threshold,
     )
     rep.decompose()
     rep.visualize_label_silhouette()
+    rep.save_results()
 
 
 if __name__ == "__main__":
