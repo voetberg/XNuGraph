@@ -70,7 +70,7 @@ def decompose(ctx, network_step, message_passing_steps, data_threshold):
         out_path=ctx.obj.out_path,
         name=name,
         title=ctx.obj.plot_title,
-        batched_fit=False,
+        batched_fit=True,
         n_threshold=data_threshold,
     )
     rep.decompose()
